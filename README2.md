@@ -1,6 +1,8 @@
 # Global Socket Server
 
-Chances are that you are wrong here. Click here if you want to learn about gsocket: [https://www.github.com/hackerschoice/gsocket](https://www.github.com/hackerschoice.com/gsocket).
+Chances are that you are wrong here. Click here if you want to learn about gsocket: [https://www.github.com/hackerschoice/gsocket](https://www.github.com/hackerschoice.com/gsocket). You do not need this unless you want to review code.
+
+You have been warned...
 
 **Installation**
 ```
