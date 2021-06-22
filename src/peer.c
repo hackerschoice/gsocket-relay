@@ -377,11 +377,6 @@ PEER_new(int fd, SSL *ssl)
 	}
 
 	return p;
-err:
-	DEBUGF_R("error\n");
-	if (p != NULL)
-		PEER_free(p);
-	return NULL;
 }
 
 

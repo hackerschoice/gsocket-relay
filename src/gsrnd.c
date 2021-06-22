@@ -2,7 +2,7 @@
 #if 0
 
 TODO:
-- Complete GSRN-SSL_shutdown (it's initiated by client so server does not have to do anything?)
+- Complete GSRN-SSL_shutdown (it is initiated by client so server does not have to do anything?)
 - Short-wait
 - Implement FAST-CONNECT where all data after CONNECT is app-layer data.
 #endif
