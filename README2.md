@@ -4,6 +4,10 @@ Chances are that you are wrong here. Click here if you want to learn about gsock
 
 You have been warned...
 
+TODO:
+- document (try the wiki)
+- Make this compatible with gsrn.py
+
 **Installation**
 ```
 $ git clone --depth 1 https://github.com/hackerschoice/gsocket-server.git
