@@ -5,7 +5,9 @@
 #include "gopt.h"
 
 struct _gopt gopt;
+#ifdef DEBUG
 struct _g_debug_ctx g_dbg_ctx;
+#endif
 
 const char *
 strx128(uint128_t x, char *val, size_t sz)
