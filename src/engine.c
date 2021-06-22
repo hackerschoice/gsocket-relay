@@ -40,8 +40,7 @@ static int
 gsrn_listen(struct _peer *p)
 {
 	// Adjust timeout
-	bufferevent_set_timeouts(p->bev, GSRN_MSG_TIMEOUT, NULL);
-	// IGNORE any further LISTEN/CONNECT messages
+	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
 	GSRN_change_state(p, GS_PKT_TYPE_LISTEN);
 
 	// Check if addr is already listening
@@ -53,7 +52,7 @@ gsrn_listen(struct _peer *p)
 	if (ret != 0)
 		goto err;
 
-	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING);
+	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING, NULL);
 	if (buddy != NULL)
 	{
 		// There was a client waiting (-w). Connect immediately.
@@ -110,8 +109,8 @@ buddy_up(struct _peer *server, struct _peer *client)
 	GSRN_change_state(client, GSRN_STATE_BUDDY_UP);
 
 	// Adjust timeout
-	bufferevent_set_timeouts(server->bev, GSRN_ACCEPT_TIMEOUT, NULL);
-	bufferevent_set_timeouts(client->bev, GSRN_ACCEPT_TIMEOUT, NULL);
+	bufferevent_set_timeouts(server->bev, TVSEC(GSRN_ACCEPT_TIMEOUT), NULL);
+	bufferevent_set_timeouts(client->bev, TVSEC(GSRN_ACCEPT_TIMEOUT), NULL);
 }
 
 void
@@ -131,7 +130,8 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 	// IGNORE any further LISTEN/CONNECT messages
 	GSRN_change_state(p, GSRN_STATE_CONNECT);
 
-	struct _peer *buddy = PEER_get(p->addr, PEER_L_LISTENING);
+	struct _peer_l_mgr *bmgr;
+	struct _peer *buddy = PEER_get(p->addr, PEER_L_LISTENING, &bmgr);
 	if (buddy == NULL)
 	{
 		// HERE: No server listening.
@@ -149,8 +149,16 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		// HERE: Client not allowed to become a server.
 		if (!(gs_connect.flags & GS_FL_PROTO_WAIT)) // FALSE
 		{
-			GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
-			goto err;
+			// Check if a listening server was recently available and
+			// let this client wait for a big with the hope of server to
+			// open another listening connection.
+			if ((bmgr != NULL) && (evtimer_pending(bmgr->evt_shortwait, NULL)))
+			{
+				p->flags |= FL_PEER_IS_SHORTWAIT;
+			} else {
+				GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
+				goto err;
+			}
 		}
 
 		int ret;
@@ -162,7 +170,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		}
 
 		// Waiting clients will send PINGs.
-		bufferevent_set_timeouts(p->bev, GSRN_MSG_TIMEOUT, NULL);
+		bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
 		return;
 	}
 
@@ -200,7 +208,7 @@ cb_gsrn_accept(struct evbuffer *eb, size_t len, void *arg)
 	p->flags |= FL_PEER_IS_ACCEPT_RECV;
 
 	// Adjust timeout
-	bufferevent_set_timeouts(p->bev, GSRN_IDLE_TIMEOUT, NULL);
+	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_IDLE_TIMEOUT), NULL);
 	// IGNORE any further ACCEPT messages
 	GSRN_change_state(p, GSRN_STATE_ACCEPT);
 
@@ -219,7 +227,7 @@ cb_gsrn_accept(struct evbuffer *eb, size_t len, void *arg)
 
 	if (!PEER_IS_ACCEPT_RECEIVED(buddy)) // FALSE
 	{
-		PEER_L_mv(p, PEER_L_ACCEPTED);
+		PEER_L_mv(buddy, PEER_L_ACCEPTED);
 		DEBUGF_G("Waiting for ACCEPT from buddy.\n");
 		return;
 	}

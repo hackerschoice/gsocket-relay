@@ -3,8 +3,8 @@
 
 TODO:
 - Complete GSRN-SSL_shutdown (it is initiated by client so server does not have to do anything?)
-- Short-wait
 - Implement FAST-CONNECT where all data after CONNECT is app-layer data.
+- Implement propper event timeouts and do not piggy back on bufferevents read timeout (verify source)
 #endif
 
 #include "common.h"

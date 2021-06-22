@@ -158,15 +158,6 @@
 #define EX_FATAL       255
 #define EX_CONNREFUSED  61  // Used by deploy.sh to verify that server is responding
 
-typedef enum
-{
-	PEER_L_LISTENING      = 0,   // Waiting for client
-	PEER_L_WAITING        = 1,   // Client waiting for listening server
-	PEER_L_WAIT_ACCEPT    = 2,   // Waiting for peer to send 'ACCEPT'
-	PEER_L_ACCEPTED       = 3,   // ACCEPT received.
-	PEER_L_CONNECTED      = 4
-} peer_l_id_t;
-#define MAX_LISTS_BY_ADDR     (5)
 
 extern struct _gopt gopt; // declared in utils.c
 

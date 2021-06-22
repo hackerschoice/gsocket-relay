@@ -2,6 +2,8 @@
 #ifndef __GSRN_GOPT_H__
 #define __GSRN_GOPT_H__ 1
 
+#include "peer.h"
+
 struct _tree_mgr
 {
 	int n_nodes;

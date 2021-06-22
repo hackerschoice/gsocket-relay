@@ -15,6 +15,9 @@ static char *peer_l_names[MAX_LISTS_BY_ADDR] = {
 	"CONNECTED  "
 };
 
+static void cb_evt_linger(int fd_notused, short event, void *arg);
+static void cb_evt_shortwait(int fd_notused, short event, void *arg);
+
 static void
 tree_stats(void)
 {
@@ -55,7 +58,7 @@ cb_t_peer_printall(const void *nodep, const VISIT which, const int depth)
 		struct _peer_l_root *plr;
 		plr = &pl_mgr->plr[i];
 		DEBUGF("List-#%d(%s) (%d entries):\n", i, peer_l_names[i], plr->n_entries);
-		LIST_FOREACH(p, &plr->head, ll)
+		TAILQ_FOREACH(p, &plr->head, ll)
 			DEBUGF("  [%"PRIu64"] %c addr=%s\n", p->id, IS_CS(p), strx128(p->addr, valstr, sizeof valstr));
 	}
 }
@@ -99,26 +102,39 @@ cb_t_peer_find(const void *needle_a, const void *stack_b)
 static int
 pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id)
 {
+	static uint8_t token_zero[GS_TOKEN_SIZE];
 	struct _peer_l_root *plr = &pl_mgr->plr[pl_id];
-	struct _peer *fp;
-	fp = LIST_FIRST(&plr->head);
+
 	if (pl_id == PEER_L_LISTENING)
 	{
-		if (fp != NULL)
+		if (pl_mgr->flags & FL_PL_IS_TOKEN_SET)
 		{
-			if (memcmp(fp->token, p->token, sizeof fp->token) != 0)
+			// HERE: Token is set. Check token from peer.
+			if (memcmp(pl_mgr->token, p->token, sizeof pl_mgr->token) != 0)
 			{
 				DEBUGF_R("BAD TOKEN\n");
 				return -1; // Bad Token
 			}
+			evtimer_del(pl_mgr->evt_linger);
+		} else {
+			if (memcmp(p->token, token_zero, sizeof p->token) != 0)
+			{
+				// Peer's token is set. Save it.
+				pl_mgr->flags |= FL_PL_IS_TOKEN_SET;
+				memcpy(pl_mgr->token, p->token, sizeof pl_mgr->token);
+				if (pl_mgr->evt_linger == NULL)
+					pl_mgr->evt_linger = evtimer_new(gopt.evb, cb_evt_linger, pl_mgr);
+			}
 		}
+		if (pl_mgr->evt_shortwait != NULL)
+			evtimer_del(pl_mgr->evt_shortwait);
 	}
 
 	// First time we add something to this list...
-	if (fp == NULL)
+	if (TAILQ_EMPTY(&plr->head))
 		gopt.t_peers.n_uniq[pl_id] += 1;
 
-	LIST_INSERT_HEAD(&plr->head, p, ll);
+	TAILQ_INSERT_HEAD(&plr->head, p, ll);
 	plr->n_entries += 1;
 	pl_mgr->n_entries += 1;
 	gopt.t_peers.n_entries[pl_id] += 1;
@@ -142,7 +158,7 @@ peer_find_mgr(uint128_t *addr)
 }
 
 static struct _peer_l_root *
-peer_find_root(uint128_t *addr, peer_l_id_t pl_id)
+peer_find_root(uint128_t *addr, peer_l_id_t pl_id, struct _peer_l_mgr **pl_mgr_ptr)
 {
 	struct _peer_l_mgr *pl_mgr;
 
@@ -150,9 +166,12 @@ peer_find_root(uint128_t *addr, peer_l_id_t pl_id)
 	if (pl_mgr == NULL)
 		return NULL;
 
+	if (pl_mgr_ptr != NULL)
+		*pl_mgr_ptr = pl_mgr;
+
 	struct _peer_l_root *plr;
 	plr = &pl_mgr->plr[pl_id];
-	if (LIST_EMPTY(&plr->head))
+	if (TAILQ_EMPTY(&plr->head))
 		return NULL;
 
 	return plr;
@@ -175,10 +194,12 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id)
 
 		pl_mgr = calloc(1, sizeof (struct _peer_l_mgr));
 		pl_mgr->addr = p->addr;
+		pl_mgr->evt_shortwait = evtimer_new(gopt.evb, cb_evt_shortwait, pl_mgr);
+
 		int i;
 		for (i = 0; i < MAX_LISTS_BY_ADDR; i++)
 		{
-			LIST_INIT(&pl_mgr->plr[i].head);
+			TAILQ_INIT(&pl_mgr->plr[i].head);
 			pl_mgr->plr[i].pl_mgr = pl_mgr;
 		}
 
@@ -203,14 +224,23 @@ pl_unlink(struct _peer *p)
 	peer_l_id_t pl_id = PEER_L_get_id(p);
 	struct _peer_l_mgr *pl_mgr = PEER_L_get_mgr(p);
 	p->plr->n_entries -= 1;
-	LIST_REMOVE(p, ll);
+	TAILQ_REMOVE(&p->plr->head, p, ll);
 
-	if (LIST_EMPTY(&p->plr->head))
+	if (TAILQ_EMPTY(&p->plr->head))
+	{
 		gopt.t_peers.n_uniq[pl_id] -= 1;
+		if (pl_id == PEER_L_LISTENING)
+		{
+			// Give listening gsocket time to re-connect and delay client
+			// disconnects.
+			evtimer_add(pl_mgr->evt_shortwait, TVSEC(GSRN_SHORTWAIT_TIMEOUT));
+		}
+	}
 
 	pl_mgr->n_entries -= 1;
 
 	gopt.t_peers.n_entries[pl_id] -= 1;
+
 }
 
 // Move from 1 list to another or add if currently in no list.
@@ -237,17 +267,82 @@ PEER_L_mv(struct _peer *p, peer_l_id_t pl_id)
 
 // Return oldest listening peer.
 struct _peer *
-PEER_get(uint128_t addr, peer_l_id_t pl_id)
+PEER_get(uint128_t addr, peer_l_id_t pl_id, struct _peer_l_mgr **pl_mgr_ptr)
 {
 	struct _peer_l_root *plr;
 
-	plr = peer_find_root(&addr, pl_id);
+	plr = peer_find_root(&addr, pl_id, pl_mgr_ptr);
 	if (plr == NULL)
 		return NULL;
 
-	return (struct _peer *)LIST_FIRST(&plr->head); // FIXME> use TAILQ instead
+	return (struct _peer *)TAILQ_LAST(&plr->head, _listhead); // Oldest from the tailq
 }
 
+static void
+pl_mgr_t_free(struct _peer_l_mgr *pl_mgr)
+{
+	DEBUGF_C("Deleteing tree-node\n");
+	if (pl_mgr->n_entries > 0)
+		DEBUGF_R("WARN: tree-node still has %d entries\n", pl_mgr->n_entries);
+
+	if (pl_mgr->evt_linger != NULL)
+	{
+		evtimer_del(pl_mgr->evt_linger);
+		event_free(pl_mgr->evt_linger);
+	}
+
+	if (pl_mgr->evt_shortwait != NULL)
+	{
+		evtimer_del(pl_mgr->evt_shortwait);
+		event_free(pl_mgr->evt_shortwait);
+	}
+
+	tdelete(pl_mgr, &gopt.t_peers.tree, cb_t_peer_by_addr);
+	gopt.t_peers.n_nodes -= 1;
+	free(pl_mgr);
+}
+
+// The MGR for the gsocket addr had no listening gsockets and no new
+// listening gsockets were created within the timeout period.
+// => Remove the MGR. This will allow clients with different tokens
+//    to create a listening gsocket using the same address.
+static void
+cb_evt_linger(int fd_notused, short event, void *arg)
+{
+	struct _peer_l_mgr *pl_mgr = (struct _peer_l_mgr *)arg;
+
+	DEBUGF_C("Timeout(%d sec). No listening socket created. Deleting token.\n", GSRN_TOKEN_LINGER);
+	// Allow others to use the this addr to create listening gsockets
+	pl_mgr->flags &= ~FL_PL_IS_TOKEN_SET;
+
+	if (pl_mgr->n_entries <= 0)
+	{
+		pl_mgr_t_free(pl_mgr);
+		pl_mgr = NULL;
+	}
+}
+
+static void
+cb_evt_shortwait(int fd_notused, short event, void *arg)
+{
+	struct _peer_l_mgr *pl_mgr = (struct _peer_l_mgr *)arg;
+
+	DEBUGF_W("Timeout(%d sec). No server connected. Freeing clients...\n", GSRN_SHORTWAIT_TIMEOUT);
+
+	struct _peer_l_root *plr = &pl_mgr->plr[PEER_L_WAITING];
+	if (plr == NULL)
+		return;
+
+	struct _peer *p;
+	TAILQ_FOREACH(p, &plr->head, ll)
+	{
+		if (!(PEER_IS_SHORTWAIT(p)))
+			continue;
+		DEBUGF_W("  [%"PRIu64"] goodbye\n", p->id);
+		GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
+		PEER_goodbye(p);	
+	}
+}
 
 // Remove peer from double linked list and if this is the last peer then also
 // remove the list-root from the binary tree.
@@ -264,9 +359,18 @@ peer_t_del(struct _peer *p)
 	{
 		char val[64];
 		DEBUGF_C("This was the last peer with addr=%s\n", strx128(p->addr, val, sizeof val));
-		tdelete(pl_mgr, &gopt.t_peers.tree, cb_t_peer_by_addr);
-		gopt.t_peers.n_nodes -= 1;
-		XFREE(pl_mgr);
+		if (PEER_L_get_id(p) == PEER_L_LISTENING)
+		{
+			// Wait 15 seconds before deleting MGR.
+			// This allows the original server (matching token) to establish a new
+			// connection and denies any other client to create a listening gsocket
+			// unless the token matches (for this gsocket addr).
+			if (pl_mgr->flags & FL_PL_IS_TOKEN_SET)
+				evtimer_add(pl_mgr->evt_linger, TVSEC(GSRN_TOKEN_LINGER));
+		} else {
+			pl_mgr_t_free(pl_mgr);
+			pl_mgr = NULL;
+		}
 	}
 
 	p->plr = NULL;
@@ -296,7 +400,7 @@ PEER_goodbye(struct _peer *p)
 
 	DEBUGF("%zu bytes left to write\n", sz);
 	p->flags |= FL_PEER_IS_GOODBYE;
-	bufferevent_set_timeouts(p->bev, NULL, GSRN_FLUSH_TV_TIMEOUT);
+	bufferevent_set_timeouts(p->bev, NULL, TVSEC(GSRN_FLUSH_TV_TIMEOUT));
 	bufferevent_enable(p->bev, EV_WRITE);
 	PKT_set_void(&p->pkt);
 }
@@ -362,8 +466,7 @@ PEER_new(int fd, SSL *ssl)
 	}
 
 	bufferevent_setcb(p->bev, cb_bev_read, cb_bev_write /*NULL*/, cb_bev_status, p);
-	struct timeval to = {GSRN_1STMSG_TIMEOUT, 0};
-	bufferevent_set_timeouts(p->bev, &to /*read*/, NULL /*write*/);
+	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_1STMSG_TIMEOUT) /*read*/, NULL /*write*/);
 
 	if (ssl == NULL)
 		cb_bev_status(p->bev, BEV_EVENT_CONNECTED, p); // Immediately go into 'connected' state
