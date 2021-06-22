@@ -2,7 +2,7 @@
 
 [YOU ARE WRONG HERE. YOU WANT TO GO TO https://www.github.com/hackerschoice/gsocket.](https://www.github.com/hackerschoice/gsocket)
 
-This repository is the Global Socket Relay. There is never the need for you to run a GSRN server. *YOU CAN RUN GSOCKET WITHOUT RUNNING A SERVER*.
+This repository is the Global Socket Relay. There is never the need for you to run a Global Socket Relay. *YOU CAN RUN GSOCKET WITHOUT RUNNING A RELAY*.
 
 **[LEAVE NOW. CLICK HERE.](https://www.github.com/hackerschoice/gsocket)**  
 **[https://www.github.com/hackerschoice/gsocket](https://www.github.com/hackerschoice/gsocket)**  
