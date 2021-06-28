@@ -12,14 +12,10 @@ TODO:
 #include "peer.h"
 #include "gopt.h"
 
-// extern struct _gopt gopt;
-
-
 int
 main(int argc, char *argv[])
 {
-
-	init_defaults();
+	init_defaults(PRG_GSRND);
 	do_getopt(argc, argv);
 	init_vars();
 

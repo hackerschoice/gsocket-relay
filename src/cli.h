@@ -18,6 +18,8 @@ struct _cli
 struct _cli *CLI_new(int fd, SSL *ssl, int is_server);
 void CLI_free(struct _cli *c);
 void CLI_write(struct _cli *c, struct evbuffer *eb);
-void CLI_send(struct _cli *c, uint8_t type, uint16_t len, uint8_t *payload);
+void CLI_payload(struct _cli *c, uint8_t type, uint16_t len, const void *payload);
+void CLI_msg(struct _cli *c, const void *msg, size_t sz);
+void CLI_printf(struct _cli *c, const char *fmt, ...);
 
 #endif // !__GSRN_CLI_H__

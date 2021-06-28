@@ -41,13 +41,11 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 		if (plr == NULL)
 			return;
 
-		peer_l_id_t pl_id;
-		pl_id = PLR_L_get_id(plr);
-		DEBUGF("List-#%d(%s) (%d entries):\n", pl_id, PEER_L_name(pl_id), plr->n_entries);
+		DEBUGF("List-#%d(%s) (%d entries):\n", PLR_L_get_id(plr), PEER_L_name(PLR_L_get_id(plr)), plr->n_entries);
 		return;
 	}
 
-	char valstr[64]; DEBUGF("  [%u] %c addr=%s\n", p->id, IS_CS(p), strx128(p->addr, valstr, sizeof valstr));
+	DEBUGF("  [%u] %c addr=%s\n", p->id, IS_CS(p), strx128x(p->addr));
 
 	peer_l_id_t pl_id = PLR_L_get_id(plr);
 	// Do not show connected client (as we alrady show the server connected)
@@ -78,8 +76,42 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	if (*first_call_ptr == 1)
 	{
 		*first_call_ptr = 0;
-		msg.flags |= GSRN_FL_CLI_LIST_FIRSTCALL;
+		msg.flags |= GSRN_FL_CLI_LIST_START;
 	}
+
+
+	memset(&msg.flagstr, '-', sizeof msg.flagstr);
+	if (p->flags & FL_PEER_IS_SAW_CLIENTHELO)
+		msg.fl.ssl = 'S';
+	uint8_t gpflags = p->gs_proto_flags;
+	msg.fl.major = p->version_major;
+	msg.fl.minor = p->version_minor;
+	if (p->buddy != NULL)
+	{
+		if (p->buddy->flags & FL_PEER_IS_SAW_CLIENTHELO)
+			msg.fl.ssl = 'S';
+		gpflags |= p->buddy->gs_proto_flags;
+		// Report the lowest of both version numbers to CLI.
+		if (msg.fl.major > p->buddy->version_major)
+		{
+			msg.fl.major = p->buddy->version_major;
+			msg.fl.minor = p->buddy->version_minor;
+		} else if (msg.fl.major == p->buddy->version_major) {
+			msg.fl.minor = MIN(msg.fl.minor, p->buddy->version_minor);
+		}
+	}
+	msg.fl.major += '0';
+	msg.fl.minor += '0';
+
+	if (gpflags & GS_FL_PROTO_WAIT)
+		msg.fl.wait = 'W';
+	if (gpflags & GS_FL_PROTO_CLIENT_OR_SERVER)
+		msg.fl.x_client_or_server = 'X';
+	if (gpflags & GS_FL_PROTO_FAST_CONNECT)
+		msg.fl.low_latency = 'F';
+	if (gpflags & GS_FL_PROTO_LOW_LATENCY)
+		msg.fl.low_latency = 'L';
+
 	uint32_t idle = 0;
 	if (p->in_last_usec != 0)
 		idle = MAX(0, GS_USEC_TO_SEC(gopt.usec_now - MAX(p->in_last_usec, p->out_last_usec)));
@@ -120,6 +152,40 @@ cb_cli_list(struct evbuffer *eb, size_t len, void *arg)
 	CLI_write(c, gopt.cli_out_evb);
 }
 
+static void
+cb_free(struct _peer *p, void *arg)
+{
+	PEER_free(p, 0);
+	*(int *)arg += 1;
+}
+
+static void
+cb_cli_kill(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli *c = (struct _cli *)arg;
+	struct _cli_kill msg;
+
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	msg.addr = be128toh(msg.addr);
+	msg.peer_id = ntohl(msg.peer_id);
+
+	DEBUGF_B("CLI request KILL (len=%zu, id=%u addr=%s)\n", len, msg.peer_id, strx128x(msg.addr));
+
+	int killed = 0;
+	if (msg.peer_id == 0)
+	{
+		PEER_by_addr(msg.addr, cb_free, &killed);
+		if (killed == 0)
+			CLI_printf(c, "%s - No such address.", strx128x(msg.addr));
+		else
+			CLI_printf(c, "%d connections terminated.", killed);
+	} else {
+		CLI_printf(c, "ERR: killing by ID not yet supported!");
+
+	}
+}
+
 // Called by server
 static void
 cb_accept_cli(int ls, short ev, void *arg)
@@ -135,7 +201,8 @@ cb_accept_cli(int ls, short ev, void *arg)
 	if (c == NULL)
 		goto err;
 
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, 0, cb_cli_list, c);
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, 0, cb_cli_list, c); // variable length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_KILL, sizeof (struct _cli_kill), cb_cli_kill, c); // Fixed length message
 	bufferevent_enable(c->bev, EV_READ);
 
 	return;

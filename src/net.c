@@ -20,13 +20,13 @@ fd_net_bind(int fd, uint32_t ip, uint16_t port)
 }
 
 int
-fd_net_listen(int fd, uint16_t port)
+fd_net_listen(int fd, uint32_t ip, uint16_t port)
 {
 	int ret;
 
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof (int));
 
-	ret = fd_net_bind(fd, INADDR_ANY, port);
+	ret = fd_net_bind(fd, ip, port);
 	if (ret < 0)
 		return ret;
 

@@ -14,15 +14,12 @@ void
 cb_bev_read_cli(struct bufferevent *bev, void *arg)
 {
 	struct _cli *c = (struct _cli *)arg;
-	DEBUGF("read\n");
 	PKT_dispatch(&c->pkt, bufferevent_get_input(bev));
 }
 
 void
 cb_bev_write_cli(struct bufferevent *bev, void *arg)
 {
-	struct _cli *c = (struct _cli *)arg;
-
-	DEBUGF("write\n");
+	// struct _cli *c = (struct _cli *)arg;
 }
 

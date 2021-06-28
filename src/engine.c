@@ -19,6 +19,7 @@ echo 212992 >/proc/sys/net/core/wmem_default
 #include "net.h"
 #include "packet.h"
 #include "peer.h"
+#include "cli.h"
 #include "gsrnd.h"
 #include "protocol.h"
 #include "engine.h"
@@ -37,7 +38,7 @@ cb_gsrn_protocol_error(struct evbuffer *eb, size_t len, void *arg)
 }
 
 static int
-gsrn_listen(struct _peer *p)
+gsrn_listen(struct _peer *p, uint8_t *token)
 {
 	// Adjust timeout
 	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
@@ -48,7 +49,7 @@ gsrn_listen(struct _peer *p)
 	// Most of the time there will be just 1 (listening) peer per address
 	// unless the caller specified GS_LISTEN(n>1).
 	int ret;
-	ret = PEER_add(p, PEER_L_LISTENING);
+	ret = PEER_add(p, PEER_L_LISTENING, token);
 	if (ret != 0)
 		goto err;
 
@@ -66,22 +67,34 @@ err:
 	return -1;
 }
 
+// Set PEER information from _gs_listen/_gs_connect message
+static void
+peer_set_gs_info(struct _peer *p, struct _gs_hdr_lc *msg)
+{
+	uint128_t addr;
+	memcpy(&addr, msg->addr, sizeof addr);
+	addr = be128toh(addr);
+
+	p->addr = addr;
+	p->version_major = msg->version_major;
+	p->version_minor = msg->version_minor;
+	p->gs_proto_flags = msg->flags;
+	if (p->gs_proto_flags & GS_FL_PROTO_WAIT)
+		DEBUGF_C("WAITING\n");
+}
+
 void
 cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 {
 	struct _peer *p = (struct _peer *)arg;
-	struct _gs_listen gs_listen;
+	struct _gs_listen msg;
 
-	evbuffer_remove(eb, &gs_listen, sizeof gs_listen);
-	uint128_t addr;
-	memcpy(&addr, gs_listen.addr, sizeof addr);
-	addr = be128toh(addr);
+	evbuffer_remove(eb, &msg, sizeof msg);
+	peer_set_gs_info(p, &msg.hdr);
+	// memcpy(&p->token, msg.token, sizeof p->token);
+	DEBUGF_G("LISTEN received (addr=0x%s)\n", strx128x(p->addr));
 
-	p->addr = addr;
-	memcpy(&p->token, gs_listen.token, sizeof p->token);
-	char valstr[64]; DEBUGF_G("LISTEN received (addr=0x%s)\n", strx128(addr, valstr, sizeof valstr));
-
-	if (gsrn_listen(p) != 0)
+	if (gsrn_listen(p, msg.token) != 0)
 		goto err;
 
 	return;
@@ -117,15 +130,12 @@ void
 cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 {
 	struct _peer *p = (struct _peer *)arg;
-	struct _gs_connect gs_connect;
+	struct _gs_connect msg;
 
-	evbuffer_remove(eb, &gs_connect, sizeof gs_connect);
-	uint128_t addr;
-	memcpy(&addr, gs_connect.addr, sizeof addr);
-	addr = be128toh(addr);
+	evbuffer_remove(eb, &msg, sizeof msg);
+	peer_set_gs_info(p, &msg.hdr);
 
-	p->addr = addr;
-	char valstr[64]; DEBUGF_G("CONNECT received (addr=0x%s)\n", strx128(addr, valstr, sizeof valstr));
+	DEBUGF_G("CONNECT received (addr=0x%s)\n", strx128x(p->addr));
 
 	// IGNORE any further LISTEN/CONNECT messages
 	GSRN_change_state(p, GSRN_STATE_CONNECT);
@@ -135,19 +145,19 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 	if (buddy == NULL)
 	{
 		// HERE: No server listening.
-		if (gs_connect.flags & GS_FL_PROTO_CLIENT_OR_SERVER)
+		if (msg.flags & GS_FL_PROTO_CLIENT_OR_SERVER)
 		{
 			// HERE: peer is allowed to become a server
 			// -A flag. When no server listening. 
 			DEBUGF_G("CONNECT but becoming a listening server instead (-A is set)\n");
-			if (gsrn_listen(p) != 0)
+			if (gsrn_listen(p, NULL) != 0)
 				goto err;
 
 			return;
 		}
 
 		// HERE: Client not allowed to become a server.
-		if (!(gs_connect.flags & GS_FL_PROTO_WAIT)) // FALSE
+		if (!(msg.flags & GS_FL_PROTO_WAIT)) // FALSE
 		{
 			// Check if a listening server was recently available and
 			// let this client wait for a big with the hope of server to
@@ -162,7 +172,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		}
 
 		int ret;
-		ret = PEER_add(p, PEER_L_WAITING);
+		ret = PEER_add(p, PEER_L_WAITING, NULL);
 		if (ret != 0)
 		{
 			GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNDENIED, "Not allowed to connect.");
@@ -194,7 +204,10 @@ flush_relay(struct _peer *p)
 		return;
 
 	if (evbuffer_get_length(in) > 0)
+	{
+		PEER_stats_update(p, in);
 		bufferevent_write_buffer(p->buddy->bev, in);
+	}
 }
 
 void
@@ -247,39 +260,28 @@ cb_gsrn_ping(struct evbuffer *eb, size_t len, void *arg)
 	GSRN_send_pong(p, &msg.payload[0]);
 }
 
+// There seems to be no way finding out when a remote host has called 'close()'
+// after it called shutdown(). All those calls return that the socket is still
+// valid and open even after the remote has called 'close()'.
+// static void
+// cb_evt_shutdown(int fd_notused, short event, void *arg)
+// {
+// 	struct _peer *p = (struct _peer *)arg;
+// 	int err = 0;
+// 	socklen_t len = sizeof (err);
+// 	int ret;
 
-#define BEV_ERR_ADD(dst, end, rem, what, check)  do{ \
-	if (!(what & check)) { break; } \
-	rem &= ~check; \
-	int rv; \
-	rv = snprintf(dst, end - dst, "|%s", #check); \
-	if (rv <= 0) { break; } \
-	dst += rv; \
-} while (0)
+// 	ret = getsockopt(p->fd, SOL_SOCKET, SO_ERROR, &err, &len);
+// 	DEBUGF("shutdown fd=%d ret=%d errno=%d so-err=%d\n", p->fd, ret, errno, err);
 
-// Return BEV_EVENT_ errors as string
-const char *
-BEV_strerror(short what)
-{
-	static char err[128];
-	char *d = &err[0];
-	char *e = d + sizeof err;
-	short rem = what; // remaining flags
-
-	*d = 0;
-
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_READING);
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_WRITING);
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_EOF);
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_ERROR);
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_TIMEOUT);
-	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_CONNECTED);
-
-	if (rem != 0)
-		snprintf(d, e - d, "|UNKNOWN-%x", rem);
-
-	return err;
-}
+// 	struct sockaddr_in addr;
+// 	len = sizeof (addr);
+// 	ret = getpeername(p->fd, (struct sockaddr *)&addr, &len);
+// 	DEBUGF("peer ret=%d, %s %d\n", ret, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+// 	ret = write(p->fd, &len, 0);
+// 	DEBUGF("write ret=%d errno=%d\n", ret, errno);
+// 	evtimer_add(p->evt_shutdown, TVSEC(1));
+// }
 
 void
 cb_bev_status(struct bufferevent *bev, short what, void *arg)
@@ -313,6 +315,11 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 
 		p->flags |= FL_PEER_IS_EOF_RECEIVED;
 
+		// if (p->evt_shutdown != NULL)
+		// 	DEBUGF_R("OOPS. Can not happen.\n");
+		// p->evt_shutdown = evtimer_new(gopt.evb, cb_evt_shutdown, p);
+		// evtimer_add(p->evt_shutdown, TVSEC(1));
+
 		// soft close(). Inform buddy that no more data is coming
 		// his way. Buddy may still send data to us (the socket is not
 		// closed for reading yet).
@@ -320,12 +327,15 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 		// Stop reading
 		bufferevent_disable(p->bev, EV_READ);
 
+		// This connection is half-dead. Free it unless the buddy sends data..
+		bufferevent_set_timeouts(p->buddy->bev, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT), NULL);
+
 		return;
 	}
 
 	// Any other error-event is bad (disconnect)
 err:
-	PEER_free(p);
+	PEER_free(p, 1);
 }
 
 void
@@ -337,7 +347,7 @@ cb_bev_write(struct bufferevent *bev, void *arg)
 	// All data written. Enable reading again.
 	if (PEER_IS_GOODBYE(p))
 	{
-		PEER_free(p);
+		PEER_free(p, 1);
 		return;
 	}
 	if (PEER_IS_EOF_RECEIVED(p))
@@ -363,6 +373,7 @@ cb_bev_relay_read(struct bufferevent *bev, void *arg)
 		bufferevent_disable(bev, EV_READ);
 	}
 
+	PEER_stats_update(p, in);
 	bufferevent_write_buffer(buddy->bev, in);
 }
 
@@ -373,7 +384,6 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 
 	struct evbuffer *in = bufferevent_get_input(bev);
 	struct evbuffer *out = bufferevent_get_output(bev);
-	size_t in_sz = evbuffer_get_length(in);
 	size_t out_sz = evbuffer_get_length(out);
 
 	if (out_sz > 0)
@@ -383,7 +393,6 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 	}
 
 	// Dispatch protocol message
-	DEBUGF("in-buf length=%zu\n", in_sz);
 	PKT_dispatch(&p->pkt, in);
 	DEBUGF("Input buffer size=%zu after PKT_dispatch()\n", evbuffer_get_length(in));
 
@@ -394,7 +403,7 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 static int
 accept_ssl(int ls, SSL *ssl)
 {
-	int sox = -1;
+	int sox;
 
 	sox = fd_net_accept(ls);
 	if (sox < 0)
@@ -450,10 +459,11 @@ err:
 
 // Accept TCP for CNC
 void
-cb_accept_con(int fd, short ev, void *arg)
+cb_accept_cnc(int fd, short ev, void *arg)
 {
 	accept_ssl(fd, NULL);
 // FIXME: pass which msg dispatcher function should be called for message types.
 
 	// FIXME: add event for reading and writing.
 }
+

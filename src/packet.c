@@ -17,15 +17,18 @@ fixed length messages).
 #endif
 
 #include "common.h"
+#include "utils.h"
 #include "packet.h"
 #include "gopt.h"
 
 static void
 cb_dummy(struct evbuffer *eb, size_t len, void *arg)
 {
+#ifdef DEBUG
 	PKT *pkt = (PKT *)arg;
 
 	DEBUGF_R("Unhandled function for type %u\n", pkt->type);
+#endif
 	evbuffer_drain(eb, len);
 }
 
@@ -143,6 +146,7 @@ dispatch(PKT *pkt, struct evbuffer *eb)
 			uint16_t len;
 			evbuffer_copyout_from(eb, &ev_pos, &len, sizeof len);
 			ex_len = ntohs(len) + 3;
+			// DEBUGF("type=%u Variable Lenght=%zu\n", type, ex_len);
 		}
 
 		pkt->type = type;
@@ -152,7 +156,7 @@ dispatch(PKT *pkt, struct evbuffer *eb)
 		goto more_data;
 
 	// Call Callback
-	// DEBUGF_G("Calling for type %u\n", pkt->type);
+	// DEBUGF_G("Calling for type=%u ex_len=%zu\n", pkt->type, ex_len);
 	if (pkt->funcs[pkt->type] != NULL)
 		(*pkt->funcs[pkt->type])(eb, ex_len, pkt->args[pkt->type]);
 

@@ -1,13 +1,18 @@
 
 #include "common.h"
+#include "utils.h"
 #include "net.h"
 #include "engine.h"
 #include "gopt.h"
 
 struct _gopt gopt;
+struct _gd gd;
+struct _gcli gcli;
 #ifdef DEBUG
 struct _g_debug_ctx g_dbg_ctx;
 #endif
+
+// static prg_t g_prg;
 
 const char *
 strx128(uint128_t x, char *val, size_t sz)
@@ -20,22 +25,49 @@ strx128(uint128_t x, char *val, size_t sz)
 	return val;
 }
 
-void
-init_defaults(void)
+const char *
+strx128x(uint128_t x)
 {
+	static char valstr[64];
+	strx128(x, valstr, sizeof valstr);
+
+	return valstr;
+}
+
+
+static void
+init_defaults_gsrnd(void)
+{
+	gopt.port = GSRN_DEFAULT_PORT;
+	gopt.port_ssl = GSRN_DEFAULT_PORT_SSL;
+}
+
+static void
+init_defaults_cli()
+{
+}
+
+void
+init_defaults(prg_t prg)
+{
+	gopt.prg = prg;
 	gopt.err_fp = stderr;
+	gopt.ip_cli = ntohl(inet_addr("127.0.0.1"));
+	gopt.port_cli = CLI_DEFAULT_PORT;
+	// gopt.port_ssl = CLI_DEFAULT_PORT_SSL;
 
 	// Must ignore SIGPIPE. Epoll may signal that socket is ready for wiriting
 	// but gets closed by remote before calling write().
 	signal(SIGPIPE, SIG_IGN);
 
-	gopt.port = GSRN_DEFAULT_PORT;
-	gopt.port_ssl = GSRN_DEFAULT_PORT_SSL;
+	if (prg == PRG_GSRND)
+		init_defaults_gsrnd();
+	else if (prg == PRG_CLI)
+		init_defaults_cli();
 }
 
-
-static void
-add_listen_sock(int port, struct event *ev, event_callback_fn cb_func)
+void
+add_listen_sock(uint32_t ip, int port, struct event *ev, event_callback_fn cb_func)
 {
 	if (port <= 0)
 		return;
@@ -43,7 +75,7 @@ add_listen_sock(int port, struct event *ev, event_callback_fn cb_func)
 	int ls;
 	int ret;
 	ls = fd_new_socket(SOCK_STREAM);
-	ret = fd_net_listen(ls, port);
+	ret = fd_net_listen(ls, ip, port);
 	if (ret < 0)
 	{
 		// FIXME: Log this event
@@ -88,10 +120,15 @@ init_vars(void)
 	gopt.evb = event_base_new();
 	XASSERT(gopt.evb != NULL, "Could not initialize libevent!\n");
 
-	// Start listening
-	add_listen_sock(gopt.port, &gopt.ev_listen, cb_accept);
-	add_listen_sock(gopt.port_ssl, &gopt.ev_listen_ssl, cb_accept_ssl);
-	// add_listen_sock(gopt.port_con, &gopt.ev_listen_con, cb_accept_con);
+	init_engine();
+
+	// if (gopt.prg == PRG_GSRND)
+	// {
+	// 	// add_listen_sock(gopt.port_con, &gopt.ev_listen_con, cb_accept_con);
+
+	// } else if (gopt.prg == PRG_CLI) {
+
+	// }
 }
 
 static void
@@ -134,10 +171,10 @@ do_getopt(int argc, char *argv[])
 				gopt.is_concentrator = 1;
 				break;
 			case 'c':
-				gopt.port_con = atoi(optarg);
+				gopt.port_cnc = atoi(optarg);
 				break;
 			case 'd':
-				gopt.ip_con = inet_addr(optarg);
+				gopt.ip_cnc = inet_addr(optarg);
 				break;
 			case 'v':
 				gopt.verbosity += 1;
@@ -150,3 +187,80 @@ do_getopt(int argc, char *argv[])
 		}
 	}
 }
+
+
+#define BEV_ERR_ADD(dst, end, rem, what, check)  do{ \
+	if (!(what & check)) { break; } \
+	rem &= ~check; \
+	int rv; \
+	rv = snprintf(dst, end - dst, "|%s", #check); \
+	if (rv <= 0) { break; } \
+	dst += rv; \
+} while (0)
+
+// Return BEV_EVENT_ errors as string
+const char *
+BEV_strerror(short what)
+{
+	static char err[128];
+	char *d = &err[0];
+	char *e = d + sizeof err;
+	short rem = what; // remaining flags
+
+	*d = 0;
+
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_READING);
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_WRITING);
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_EOF);
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_ERROR);
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_TIMEOUT);
+	BEV_ERR_ADD(d, e, rem, what, BEV_EVENT_CONNECTED);
+
+	if (rem != 0)
+		snprintf(d, e - d, "|UNKNOWN-%x", rem);
+
+	return err;
+}
+
+static const char *peer_l_names[MAX_LISTS_BY_ADDR] = {
+	"LISTEN",
+	"WAIT  ",
+	"WAIT-A",
+	"ACCEPT",
+	"ESTABL"
+};
+
+
+const char *
+PEER_L_name(uint8_t pl_id)
+{
+	return peer_l_names[pl_id];
+}
+
+static const long hextable[] = {
+   [0 ... 255] = -1, // bit aligned access into this table is considerably
+   ['0'] = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, // faster for most modern processors,
+   ['A'] = 10, 11, 12, 13, 14, 15,       // for the space conscious, reduce to
+   ['a'] = 10, 11, 12, 13, 14, 15        // signed char.
+};
+
+uint32_t
+GS_hexto32(const char *hex) {
+   uint32_t ret = 0; 
+   while (*hex && ret >= 0) {
+      ret = (ret << 4) | hextable[(unsigned char)*hex++];
+   }
+   return ret; 
+}
+
+uint128_t
+GS_hexto128(const char *hex) {
+   uint128_t ret = 0; 
+   while (*hex && ret >= 0) {
+      ret = (ret << 4) | hextable[(unsigned char)*hex++];
+   }
+   return ret; 
+}
+
+
+

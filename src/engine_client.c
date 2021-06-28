@@ -16,6 +16,7 @@ typedef void (*dp_func_t)(char *line, char *end);
 static void cmd_default(char *opt, char *end);
 static void cmd_help(char *opt, char *end);
 static void cmd_list(char *opt, char *end);
+static void cmd_kill(char *opt, char *end);
 static void cmd_exit(char *opt, char *end);
 
 static void cmd_list_default(char *opt_notused, char *end);
@@ -35,6 +36,7 @@ struct dp dps[] = {
 	{ "help"    , cmd_help},
 	{ "list"    , cmd_list},
 	{ "ls"      , cmd_list},    // 'list' can have nested commands
+	{ "kill"    , cmd_kill},
 	{ "exit"    , cmd_exit},
 	{ "quit"    , cmd_exit}
 };
@@ -149,9 +151,25 @@ cmd_list(char *opt, char *end)
 	}
 
 	// HERE: 'list' command without parameters.	
-	CLI_send(g_cli, GSRN_CLI_TYPE_LIST, 0, NULL);
+	CLI_payload(g_cli, GSRN_CLI_TYPE_LIST, 0, NULL);
 }
 
+static void
+cmd_kill(char *opt, char *end)
+{
+	struct _cli_kill msg;
+
+	memset(&msg, 0, sizeof msg);
+	// STOP HERE: converting to strx128 deadbeef and back does not always give 16 char hex string (which it shoudl!)
+	// and also could implement 'kill address id'
+	msg.hdr.type = GSRN_CLI_TYPE_KILL;
+	if (end - opt <= 10)
+		msg.peer_id = htonl(atoi(opt)); // It's a PEER-ID
+	else // ..or a hex address
+		msg.addr = htobe128(GS_hexto128(opt)); // FIXME, convert hex to addr
+
+	CLI_msg(g_cli, &msg, sizeof msg);
+}
 
 ///////////////// DP
 
@@ -172,7 +190,12 @@ cmd_exit(char *opt_notused, char *end)
 static void
 cmd_help(char *opt, char *end)
 {
-	DEBUGF_Y("called (%s)\n", opt);
+	printf(""
+"help              - this help\n"
+"list              - list all peers\n"
+"kill <id/addr>    - Disconnect peer by id or address\n"
+"quit              - Quit\n"
+"");
 
 }
 
@@ -194,7 +217,7 @@ cb_read_stdin(int fd, short what, void *arg)
 			break;
 
 		// DEBUGF("line='%s'\n", l);
-		dispatch(l, l+len+1, dps, sizeof dps / sizeof *dps);
+		dispatch(l, l+len, dps, sizeof dps / sizeof *dps);
 		free(l);
 	}
 	printf(PROMPT); fflush(stdout);
@@ -203,12 +226,11 @@ cb_read_stdin(int fd, short what, void *arg)
 static void
 cb_cli_log(struct evbuffer *eb, size_t len, void *arg)
 {
-	struct _cli *c = (struct _cli *)arg;
+	// struct _cli *c = (struct _cli *)arg;
 
 	DEBUGF("Received a log message from gsrnd.\n");
 }
 
-#define net_extract(name, confunc, src)  do{ memcpy(&name, src, sizeof name); name = confunc(name); }while(0)
 static void
 cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 {
@@ -216,22 +238,19 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 
 	evbuffer_remove(eb, &msg, sizeof msg);
 
-	if (msg.flags & GSRN_FL_CLI_LIST_FIRSTCALL)
-		printf("[    ID] Address                          State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
-	//          [     4] 435701b27bf6e7467bef67fb3a4f2c17 LISTEN     2s 10.0.2.2:521          - 10.0.2.2:526          (    2s)   2.6KB [  1.3KB/s]
-	//          [     4] 435701b27bf6e7467bef67fb3a4f2c17 ESTABL 99h05m 123.456.789.123:65123 - 111.222.333.444:64567 (99h03m)   2.6KB [  1.3KB/s]
+	if (msg.flags & GSRN_FL_CLI_LIST_START)
+		printf("\n[    ID] Address                          HSXFLWAI State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
+	//            [     4] 435701b27bf6e7467bef67fb3a4f2c17 a-----11 LISTEN     2s 10.0.2.2:521          - 10.0.2.2:526          (    2s)   2.6KB [  1.3KB/s]
+	//            [     4] 435701b27bf6e7467bef67fb3a4f2c17 zSXFLW12 ESTABL 99h05m 123.456.789.123:65123 - 111.222.333.444:64567 (99h03m)   2.6KB [  1.3KB/s]
 
-	// uint128_t addr;
-	// net_extract(addr, htobe128, &msg.addr);
-
+	uint8_t hostname_id;
+	hostname_id = GS_ADDR_get_hostname_id((uint8_t *)&msg.addr); // Network Byte Order
 	msg.addr = htobe128(msg.addr);
 	msg.peer_id = ntohl(msg.peer_id);
 	msg.in_n = ntohll(msg.in_n);
 	msg.out_n = ntohll(msg.out_n);
 
 	uint32_t age_sec = htonl(msg.age_sec);
-
-	char valstr[64]; strx128(msg.addr, valstr, sizeof valstr);
 
 	char traffic[16];
 	GS_format_bps(traffic, sizeof traffic, msg.in_n + msg.out_n, NULL);
@@ -247,7 +266,7 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	char ipport[32];
 	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(msg.ip), ntohs(msg.port));
 
-	printf("[%6u] %32s %s %*s %-21s", msg.peer_id, valstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
+	printf("[%6u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, strx128x(msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
 
 	if (msg.buddy_port != 0)
 	{
@@ -258,26 +277,18 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	}
 }
 
+static void
+cb_cli_msg(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli_msg msg;
+	char buf[len - sizeof msg + 1];
 
-// static void
-// testme()
-// {
-// 	ssize_t n;
-// 	int32_t sec;
+	evbuffer_remove(eb, &msg, GSRN_CLI_HDR_SIZE);
+	evbuffer_remove(eb, buf, len - GSRN_CLI_HDR_SIZE);
+	buf[sizeof buf - 1] = '\0';
 
-// 	char buf[128];
-// 	char since[7];
-// 	while (1)
-// 	{
-// 		n = read(0, buf, sizeof buf);
-// 		if (n <= 0)
-// 			break;
-
-// 		sec = atoi(buf);
-// 		printf("%d -> %s\n", sec, GS_format_since(since, sizeof since, sec));
-// 	}
-// 	exit(0);
-// }
+	printf("\n%s\n", buf);
+}
 
 void
 init_engine(void)
@@ -291,8 +302,9 @@ init_engine(void)
 	g_cli = CLI_new(-1, NULL, 0 /*is_server*/);
 	bufferevent_socket_connect(g_cli->bev, (struct sockaddr *)&addr, sizeof addr);
 
-	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LOG, 0, cb_cli_log, g_cli);
+	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LOG, 0 /*variable lenght*/, cb_cli_log, g_cli);
 	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LIST_RESPONSE, sizeof (struct _cli_list_r), cb_cli_list_r, g_cli);
+	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_MSG, 0 /*variable length*/, cb_cli_msg, g_cli);
 
 	g_evb = evbuffer_new();
 	event_assign(&gcli.ev_stdin, gopt.evb, 0 /*stdin*/, EV_READ | EV_PERSIST, cb_read_stdin, NULL);

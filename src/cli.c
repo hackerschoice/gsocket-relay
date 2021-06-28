@@ -43,16 +43,38 @@ CLI_write(struct _cli *c, struct evbuffer *eb)
 }
 
 void
-CLI_send(struct _cli *c, uint8_t type, uint16_t len, uint8_t *payload)
+CLI_payload(struct _cli *c, uint8_t type, uint16_t payload_len, const void *payload)
 {
 	uint16_t nlen;
 
-	evbuffer_add(c->eb, &type, type);
-	nlen = htons(len);
+	evbuffer_add(c->eb, &type, sizeof type);
+	nlen = htons(payload_len);
 	evbuffer_add(c->eb, &nlen, sizeof nlen);
 	if (payload != NULL)
-		evbuffer_add(c->eb, payload, len);
+		evbuffer_add(c->eb, payload, payload_len);
 
 	CLI_write(c, c->eb);
 }
 
+void
+CLI_msg(struct _cli *c, const void *msg, size_t sz)
+{
+	evbuffer_add(c->eb, msg, sz);
+
+	CLI_write(c, c->eb);
+}
+
+void
+CLI_printf(struct _cli *c, const char *fmt, ...)
+{
+	va_list ap;
+	int rv;
+	char buf[1024];
+
+	va_start(ap, fmt);
+	rv = vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+	rv = MIN(sizeof buf, rv);
+
+	CLI_payload(c, GSRN_CLI_TYPE_MSG, rv, buf);
+}

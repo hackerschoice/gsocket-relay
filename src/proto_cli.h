@@ -3,21 +3,50 @@
 
 #include "peer.h"
 
-struct _cli_req
+struct _cli_hdr
 {
 	uint8_t type;
 	uint16_t len;
+	char payload[0];
+} __attribute__((__packed__));
+
+struct _cli_req
+{
+	struct _cli_hdr hdr;
 	char opt[0];
+} __attribute__((__packed__));
+
+struct _cli_msg
+{
+	struct _cli_hdr hdr;
+	char msg[0];
 } __attribute__((__packed__));
 
 struct _cli_log
 {
-	uint8_t type;
-	uint16_t len;
+	struct _cli_hdr hdr;
 	char msg[0];
 } __attribute__((__packed__));
 
+struct _cli_kill
+{
+	struct _cli_hdr hdr;
+	uint32_t peer_id;
+	uint128_t addr;
+} __attribute__((__packed__));
+
 ///////////// CLI responses
+
+struct _flagstr
+{
+	uint8_t ssl;
+	uint8_t x_client_or_server;
+	uint8_t fast_connect;
+	uint8_t low_latency;
+	uint8_t wait;
+	uint8_t major;
+	uint8_t minor;
+};
 
 // 'list' response
 struct _cli_list_r
@@ -39,13 +68,24 @@ struct _cli_list_r
 	peer_l_id_t pl_id;       // Current state: LISTENING, WAITING, ...
 	uint32_t age_sec;        // Age in sec in current state (LISTEN, WAITING, CONNECTED etc) 
 	char bps[GS_BPS_MAXSIZE];
-	uint8_t flags;
+	uint8_t flags;           // GSRN_FL_CLI_LIST_START
+	// uint8_t version_major;
+	// uint8_t version_minor;
+	union {
+		uint8_t flagstr[7];
+		struct _flagstr fl;
+	};
 } __attribute__((__packed__));
 
-#define GSRN_FL_CLI_LIST_FIRSTCALL    (0x01)
+#define GSRN_CLI_HDR_SIZE             (sizeof (struct _cli_hdr))
+#define GSRN_CLI_PAYLOAD_SIZE(xmsg)   (sizeof xmsg - GSRN_CLI_HDR_SIZE)
+
+#define GSRN_FL_CLI_LIST_START        (0x01)
 
 #define GSRN_CLI_TYPE_LIST            (0x01)
 #define GSRN_CLI_TYPE_LIST_RESPONSE   (0x01)
 #define GSRN_CLI_TYPE_LOG             (0x02)
+#define GSRN_CLI_TYPE_KILL            (0x03)  // Kill a session (by ID or ADDR)
+#define GSRN_CLI_TYPE_MSG             (0x04)
 
 #endif // !__GSRN_PROTO_CLI_H__

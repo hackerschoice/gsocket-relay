@@ -140,7 +140,7 @@
 
 #if !defined(be128toh)
 # define be128toh(x) ((uint128_t)ntohll(x) & 0xFFFFFFFFFFFFFFFF) << 64 | ntohll((uint128_t)(x) >> 64)
-# define htob128(x) ((uint128_t)htonll(x) & 0xFFFFFFFFFFFFFFFF) << 64| htonll((uint128_t)(x) >> 64)
+# define htobe128(x) ((uint128_t)htonll(x) & 0xFFFFFFFFFFFFFFFF) << 64| htonll((uint128_t)(x) >> 64)
 #endif
 
 #define INT128_HIGH(x)   (uint64_t)(x>>64)
@@ -158,8 +158,12 @@
 #define EX_FATAL       255
 #define EX_CONNREFUSED  61  // Used by deploy.sh to verify that server is responding
 
+#define CLI_DEFAULT_PORT       (48001)
+#define CLI_DEFAULT_PORT_SSL   (48002)
 
 extern struct _gopt gopt; // declared in utils.c
+extern struct _gd gd;
+extern struct _gcli gcli;
 
 #define xfprintf(fp, a...) do {if (fp != NULL) { fprintf(fp, a); fflush(fp); } } while (0)
 
@@ -241,6 +245,7 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 #define XFREE(ptr)      do{if(ptr) free(ptr); ptr = NULL;}while(0)
 #define XBIO_FREE(ptr)  do{if(ptr) BIO_free(ptr); ptr = NULL;}while(0)
 #define XBEV_FREE(ptr)  do{if(ptr) bufferevent_free(ptr); ptr = NULL;}while(0)
+#define XEVT_FREE(ptr)  do{if(ptr) event_free(ptr); ptr = NULL;}while(0)
 
 
 #ifdef DEBUG
