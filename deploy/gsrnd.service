@@ -1,0 +1,21 @@
+[Unit]
+Description=Global Socket Relay Network Server
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=gsnet
+Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
+ExecStart=/home/gsnet/usr/bin/gsrnd -P0 -p7350 -vv
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/gsrnd.service
+# systemctl enable gsrnd
+# systemctl start gsrnd
+# journalctl -u gsrnd -f --no-hostname

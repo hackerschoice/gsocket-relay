@@ -31,7 +31,7 @@ cb_peers_printall(struct _peer *p, struct _peer_l_root *plr, void *arg)
 		if (plr == NULL)
 			return;
 		
-		DEBUGF("List-#%d(%s) (%d entries):\n", PLR_L_get_id(plr), PEER_L_name(PLR_L_get_id(plr)), plr->n_entries);
+		DEBUGF("List-#%ld(%s) (%d entries):\n", PLR_L_get_id(plr), PEER_L_name(PLR_L_get_id(plr)), plr->n_entries);
 		return;
 	}
 
@@ -133,6 +133,8 @@ pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t 
 			if ((token == NULL) || (memcmp(pl_mgr->token, token, sizeof pl_mgr->token) != 0))
 			{
 				DEBUGF_R("BAD TOKEN\n");
+				char hextoken[GS_TOKEN_SIZE * 2 + 1];
+				GS_LOG_V("[%6u] %32s BAD AUTH TOKEN (%s, should be %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
 				return -1; // Bad Token
 			}
 			evtimer_del(pl_mgr->evt_linger);
@@ -480,6 +482,18 @@ PEER_free(struct _peer *p, int is_free_buddy)
 {
 	DEBUGF_G("%s peer=%p\n", __func__, p);
 
+	if (PEER_IS_CLIENT(p))
+	{
+		char since[GS_SINCE_MAXSIZE];
+		GS_format_since(since, sizeof since, GS_USEC_TO_SEC(gopt.usec_now - p->state_usec));
+		char traffic[GS_BPS_MAXSIZE];
+		GS_format_bps(traffic, sizeof traffic, p->in_n + p->out_n, NULL);
+		char bps_max[GS_BPS_MAXSIZE + 2]; // + /s
+		GS_format_bps(bps_max, sizeof bps_max, p->bps_max, "/s");
+
+		GS_LOG("[%6u] %32s DISCON  %s:%u %*s %s %s", p->id, strx128x(p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
+	}
+
 #ifdef DEBUG
 	// tree_stats();
 	// PEERS_walk(cb_peers_printall, NULL);
@@ -570,6 +584,7 @@ PEER_stats_update(struct _peer *p, struct evbuffer *eb)
 	else if (gopt.usec_now - p->bps_last_usec >= GSRN_BPS_WINDOW)
 	{
 		p->bps_last = bps_calc(p->bps_last, (p->in_n + p->out_n) - p->bps_last_inout, gopt.usec_now - p->bps_last_usec);
+		p->bps_max = MAX(p->bps_max, p->bps_last); // record fastest bps
 		p->bps_last_usec = gopt.usec_now;
 		p->bps_last_inout = p->in_n + p->out_n;
 	}

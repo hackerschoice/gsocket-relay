@@ -83,6 +83,7 @@ peer_set_gs_info(struct _peer *p, struct _gs_hdr_lc *msg)
 		DEBUGF_C("WAITING\n");
 }
 
+#define GS_STR_OBSOLETE_CLIENT      "Obsolete client detected."
 void
 cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 {
@@ -92,7 +93,15 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 	evbuffer_remove(eb, &msg, sizeof msg);
 	peer_set_gs_info(p, &msg.hdr);
 	// memcpy(&p->token, msg.token, sizeof p->token);
-	DEBUGF_G("LISTEN received (addr=0x%s)\n", strx128x(p->addr));
+	DEBUGF_G("LISTEN received (addr=0x%s)\n", GS_addr128hex(NULL, p->addr));
+
+	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
+	{
+		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (listen) %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
+		goto err;
+	}
+	GS_LOG_V("[%6u] %32s LISTEN  %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
 
 	if (gsrn_listen(p, msg.token) != 0)
 		goto err;
@@ -124,6 +133,13 @@ buddy_up(struct _peer *server, struct _peer *client)
 	// Adjust timeout
 	bufferevent_set_timeouts(server->bev, TVSEC(GSRN_ACCEPT_TIMEOUT), NULL);
 	bufferevent_set_timeouts(client->bev, TVSEC(GSRN_ACCEPT_TIMEOUT), NULL);
+
+	char s_ipport[32];
+	snprintf(s_ipport, sizeof s_ipport, "%s:%u", inet_ntoa(server->addr_in.sin_addr), ntohs(server->addr_in.sin_port));
+	char c_ipport[32];
+	snprintf(c_ipport, sizeof c_ipport, "%s:%u", inet_ntoa(client->addr_in.sin_addr), ntohs(client->addr_in.sin_port));
+	
+	GS_LOG("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, c_ipport, s_ipport);
 }
 
 void
@@ -135,7 +151,12 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 	evbuffer_remove(eb, &msg, sizeof msg);
 	peer_set_gs_info(p, &msg.hdr);
 
-	DEBUGF_G("CONNECT received (addr=0x%s)\n", strx128x(p->addr));
+	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
+	{
+		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (connect) %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
+		goto err;
+	}
 
 	// IGNORE any further LISTEN/CONNECT messages
 	GSRN_change_state(p, GSRN_STATE_CONNECT);
@@ -166,6 +187,8 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 			{
 				p->flags |= FL_PEER_IS_SHORTWAIT;
 			} else {
+				GS_LOG_V("[%6u] %32s CON-REFUSED %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+
 				GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
 				goto err;
 			}
@@ -175,6 +198,8 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		ret = PEER_add(p, PEER_L_WAITING, NULL);
 		if (ret != 0)
 		{
+			GS_LOG_V("[%6u] %32s CON-DENIED %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+
 			GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNDENIED, "Not allowed to connect.");
 			goto err;
 		}
@@ -188,7 +213,6 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 	buddy_up(buddy /*server*/, p /*client*/);
 
 	DEBUGF_Y("%c connect received\n", IS_CS(p));
-
 
 	return;
 err:
@@ -246,6 +270,7 @@ cb_gsrn_accept(struct evbuffer *eb, size_t len, void *arg)
 	}
 
 	DEBUGF_Y("%c CONNECTED\n", IS_CS(p));
+
 }
 
 void

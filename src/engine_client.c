@@ -13,16 +13,25 @@ struct _cli *g_cli;
 
 typedef void (*dp_func_t)(char *line, char *end);
 
-static void cmd_default(char *opt, char *end);
+static void cmd_nocmd(char *opt, char *end);
+
 static void cmd_help(char *opt, char *end);
 static void cmd_list(char *opt, char *end);
 static void cmd_kill(char *opt, char *end);
 static void cmd_exit(char *opt, char *end);
 
-static void cmd_list_default(char *opt_notused, char *end);
 static void cmd_list_server(char *opt, char *end);
 static void cmd_list_client(char *opt, char *end);
 
+static void cmd_stop(char *opt, char *end);
+static void cmd_stop_listen(char *opt, char *end);
+static void cmd_stop_listen_tcp(char *opt, char *end);
+static void cmd_stop_listen_gsocket(char *opt, char *end);
+
+static void cmd_set(char *opt, char *end);
+static void cmd_set_proto(char *opt, char *end);
+
+#define NOCMD_PRINT() 	do {printf("Unknown command. Try 'help'.\n"); fflush(stdout);} while(0)
 
 // tuples of 'cmd-string' <=> 'function' 
 struct dp
@@ -32,20 +41,38 @@ struct dp
 };
 
 struct dp dps[] = {
-	{ NULL      , cmd_default}, // default action if cmd not found
+	{ NULL      , cmd_nocmd}, // default action if cmd not found
 	{ "help"    , cmd_help},
 	{ "list"    , cmd_list},
 	{ "ls"      , cmd_list},    // 'list' can have nested commands
 	{ "kill"    , cmd_kill},
+	{ "stop"    , cmd_stop},
+	{ "set"     , cmd_set},
 	{ "exit"    , cmd_exit},
 	{ "quit"    , cmd_exit}
 };
 
 // nested 'list' commands
 struct dp dp_list[] = {
-	{ NULL      , cmd_list_default}, // default action if cmd not found
+	{ NULL      , cmd_nocmd}, // default action if cmd not found
 	{ "server"  , cmd_list_server},
 	{ "client"  , cmd_list_client}
+};
+
+struct dp dp_stop[] = {
+	{ NULL          , cmd_nocmd /*stop_default*/},
+	{ "listen"      , cmd_stop_listen}
+};
+
+struct dp dp_stop_listen[] = {
+	{ NULL      , cmd_nocmd /*stop_listen_default*/},
+	{ "tcp"     , cmd_stop_listen_tcp},
+	{ "gsocket" , cmd_stop_listen_gsocket}
+};
+
+struct dp dp_set[] = {
+	{ NULL      , cmd_nocmd},
+	{ "protocol", cmd_set_proto}
 };
 
 void
@@ -118,14 +145,14 @@ dispatch(char *l, char *end, struct dp *d, int n)
 	(*d[0].func)(opt, end);
 }
 
-////////////////// DP-LIST
+#define DP_TRYCALL_NESTED(xopt, xend, _xdpl)      do{ \
+	if (xend - xopt <= 0) \
+		break; \
+	dispatch(xopt, xend, _xdpl, sizeof _xdpl / sizeof *_xdpl); \
+	return; \
+} while (0)
 
-static void
-cmd_list_default(char *opt_notused, char *end)
-{
-	printf("Unknown command. Try 'help list'.\n");
-	fflush(stdout);
-}
+////////////////// DP-LIST
 
 static void
 cmd_list_server(char *opt, char *end)
@@ -143,15 +170,79 @@ cmd_list_client(char *opt, char *end)
 static void
 cmd_list(char *opt, char *end)
 {
-
-	if (end - opt > 0)
-	{
-		dispatch(opt, end, dp_list, sizeof dp_list / sizeof *dp_list);
-		return;
-	}
+	DP_TRYCALL_NESTED(opt, end, dp_list);
 
 	// HERE: 'list' command without parameters.	
 	CLI_payload(g_cli, GSRN_CLI_TYPE_LIST, 0, NULL);
+}
+
+/////////////////// DP-STOP
+static void
+cmd_stop(char *opt, char *end)
+{
+	DP_TRYCALL_NESTED(opt, end, dp_stop);
+
+	NOCMD_PRINT();
+}
+
+static void
+cmd_stop_listen(char *opt, char *end)
+{
+	DP_TRYCALL_NESTED(opt, end, dp_stop_listen);
+
+	NOCMD_PRINT();
+}
+
+static void
+cmd_stop_listen_tcp(char *opt, char *end)
+{
+	struct _cli_stop msg;
+
+	memset(&msg, 0, sizeof msg);
+
+	msg.hdr.type = GSRN_CLI_TYPE_STOP;
+	msg.opcode = GSRN_CLI_OP_STOP_LISTEN_TCP;
+
+	CLI_msg(g_cli, &msg, sizeof msg);
+}
+
+static void
+cmd_stop_listen_gsocket(char *opt, char *end)
+{
+	printf("Not yet implemented\n"); fflush(stdout);
+}
+
+
+//////////////// DP-SET
+static void
+cmd_set(char *opt, char *end)
+{
+	DP_TRYCALL_NESTED(opt, end, dp_set);
+
+	NOCMD_PRINT();
+}
+
+static void
+cmd_set_proto(char *opt, char *end)
+{
+	struct _cli_set msg;
+
+	memset(&msg, 0, sizeof msg);
+
+	msg.opcode = GSRN_CLI_OP_SET_PROTO;
+	msg.version_major = atoi(opt);
+	char *str;
+	str = strchr(opt, '.');
+	if (str == NULL)
+		goto err;
+	msg.version_minor = atoi(str + 1);
+
+	msg.hdr.type = GSRN_CLI_TYPE_SET;
+
+	CLI_msg(g_cli, &msg, sizeof msg);
+	return;
+err:
+	NOCMD_PRINT();
 }
 
 static void
@@ -174,10 +265,9 @@ cmd_kill(char *opt, char *end)
 ///////////////// DP
 
 static void
-cmd_default(char *opt_notused, char *end)
+cmd_nocmd(char *opt, char *end)
 {
-	printf("Unknown command. Try 'help'.\n");
-	fflush(stdout);
+	NOCMD_PRINT();
 }
 
 static void
@@ -193,7 +283,9 @@ cmd_help(char *opt, char *end)
 	printf(""
 "help              - this help\n"
 "list              - list all peers\n"
+"stop listen tcp   - Stop accepting GSRN connections (TCP & SSL)\n"
 "kill <id/addr>    - Disconnect peer by id or address\n"
+"set proto <x.y>   - Set minimum accepted protocol version\n"
 "quit              - Quit\n"
 "");
 
@@ -245,7 +337,6 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 
 	uint8_t hostname_id;
 	hostname_id = GS_ADDR_get_hostname_id((uint8_t *)&msg.addr); // Network Byte Order
-	msg.addr = htobe128(msg.addr);
 	msg.peer_id = ntohl(msg.peer_id);
 	msg.in_n = ntohll(msg.in_n);
 	msg.out_n = ntohll(msg.out_n);
@@ -266,7 +357,7 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	char ipport[32];
 	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(msg.ip), ntohs(msg.port));
 
-	printf("[%6u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, strx128x(msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
+	printf("[%6u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
 
 	if (msg.buddy_port != 0)
 	{

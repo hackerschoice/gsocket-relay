@@ -141,10 +141,15 @@ dispatch(PKT *pkt, struct evbuffer *eb)
 			// HERE: It's a variable length message (TLV)
 			if (eb_sz < 3)
 				goto more_data;
+			uint16_t len;
+			#if 0
 			struct evbuffer_ptr ev_pos;
 			evbuffer_ptr_set(eb, &ev_pos, 1, EVBUFFER_PTR_SET);
-			uint16_t len;
 			evbuffer_copyout_from(eb, &ev_pos, &len, sizeof len);
+			#endif
+			uint8_t buf[3];
+			evbuffer_copyout(eb, buf, 3);
+			memcpy(&len, buf+1, sizeof len);
 			ex_len = ntohs(len) + 3;
 			// DEBUGF("type=%u Variable Lenght=%zu\n", type, ex_len);
 		}

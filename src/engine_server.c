@@ -41,7 +41,7 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 		if (plr == NULL)
 			return;
 
-		DEBUGF("List-#%d(%s) (%d entries):\n", PLR_L_get_id(plr), PEER_L_name(PLR_L_get_id(plr)), plr->n_entries);
+		DEBUGF("List-#%ld(%s) (%d entries):\n", PLR_L_get_id(plr), PEER_L_name(PLR_L_get_id(plr)), plr->n_entries);
 		return;
 	}
 
@@ -186,6 +186,47 @@ cb_cli_kill(struct evbuffer *eb, size_t len, void *arg)
 	}
 }
 
+#define CLI_BADOPCODE(_xc, _xop)       CLI_printf(_xc, "ERR: Unknown opcode (%u)", _xop)
+static void
+cb_cli_stop(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli *c = (struct _cli *)arg;
+	struct _cli_stop msg;
+
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	if (msg.opcode == GSRN_CLI_OP_STOP_LISTEN_TCP)
+	{
+		close_del_ev(&gopt.ev_listen);
+		close_del_ev(&gopt.ev_listen_ssl);
+
+		CLI_printf(c, "Stopped TCP port.");
+		return;
+	}
+
+	CLI_BADOPCODE(c, msg.opcode);
+}
+
+static void
+cb_cli_set(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli *c = (struct _cli *)arg;
+	struct _cli_set msg;
+
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	if (msg.opcode == GSRN_CLI_OP_SET_PROTO)
+	{
+		gd.min_version_major = msg.version_major;
+		gd.min_version_minor = msg.version_minor;
+
+		CLI_printf(c, "Minimum Protocol set to %u.%u", gd.min_version_major, gd.min_version_minor);
+		return;
+	}
+
+	CLI_BADOPCODE(c, msg.opcode);
+}
+
 // Called by server
 static void
 cb_accept_cli(int ls, short ev, void *arg)
@@ -203,6 +244,8 @@ cb_accept_cli(int ls, short ev, void *arg)
 
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, 0, cb_cli_list, c); // variable length message
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_KILL, sizeof (struct _cli_kill), cb_cli_kill, c); // Fixed length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STOP, sizeof (struct _cli_stop), cb_cli_stop, c); // Fixed length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SET, sizeof (struct _cli_set), cb_cli_set, c); // Fixed length message
 	bufferevent_enable(c->bev, EV_READ);
 
 	return;

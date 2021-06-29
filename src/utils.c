@@ -13,6 +13,7 @@ struct _g_debug_ctx g_dbg_ctx;
 #endif
 
 // static prg_t g_prg;
+static void cb_gs_log(struct _gs_log_info *l);
 
 const char *
 strx128(uint128_t x, char *val, size_t sz)
@@ -52,6 +53,7 @@ init_defaults(prg_t prg)
 {
 	gopt.prg = prg;
 	gopt.err_fp = stderr;
+	gopt.log_fp = stdout;
 	gopt.ip_cli = ntohl(inet_addr("127.0.0.1"));
 	gopt.port_cli = CLI_DEFAULT_PORT;
 	// gopt.port_ssl = CLI_DEFAULT_PORT_SSL;
@@ -67,8 +69,11 @@ init_defaults(prg_t prg)
 }
 
 void
-add_listen_sock(uint32_t ip, int port, struct event *ev, event_callback_fn cb_func)
+add_listen_sock(uint32_t ip, int port, struct event **evptr, event_callback_fn cb_func)
 {
+	if (evptr == NULL)
+		return;
+	
 	if (port <= 0)
 		return;
 
@@ -78,18 +83,37 @@ add_listen_sock(uint32_t ip, int port, struct event *ev, event_callback_fn cb_fu
 	ret = fd_net_listen(ls, ip, port);
 	if (ret < 0)
 	{
-		// FIXME: Log this event
+		GS_LOG("ERR: listen(%d): %s\n", port, strerror(errno));
 		DEBUGF("listen(%d): %s\n", port, strerror(errno));
 		return;
 	}
 
-	event_assign(ev, gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, NULL);
-	event_add(ev, NULL);
+	*evptr = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, NULL);
+	event_add(*evptr, NULL);
+}
+
+void
+close_del_ev(struct event **evptr)
+{
+	int fd;
+	if ((evptr == NULL) || (*evptr == NULL))
+		return;
+
+	struct event *ev = *evptr;
+
+	fd = event_get_fd(ev);
+	if (fd < 0)
+		return;
+	event_del(ev);
+	close(fd);
+	*evptr = NULL;
 }
 
 void
 init_vars(void)
 {
+	GS_library_init(gopt.err_fp, /* Debug Output */ gopt.err_fp, cb_gs_log);
+
 	SSL_load_error_strings();
 	SSL_library_init();
 	gopt.ssl_ctx = SSL_CTX_new(TLS_server_method() /*SSLv23_client_method()*/);
@@ -143,6 +167,7 @@ usage(char *err)
 " -C            Listen for cnc connections [default=no]\n"
 " -c <port>     TCP port of cnc [default=%d]\n"
 " -d <IP>       Destination IP of CNC server [default=none]\n"
+" -L <file>     Logfile [default=stderr]\n"
 "", VERSION, GSRN_DEFAULT_PORT, GSRN_DEFAULT_PORT_SSL, GSRN_DEFAULT_PORT_CON);
 
 	if (err)
@@ -157,10 +182,16 @@ do_getopt(int argc, char *argv[])
 	int c;
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "p:P:c:d:hv")) != -1)
+	while ((c = getopt(argc, argv, "L:p:P:c:d:hv")) != -1)
 	{
 		switch (c)
 		{
+			case 'L':
+				gopt.log_fp = fopen(optarg, "a");
+				if (gopt.log_fp == NULL)
+					ERREXIT("fopen(%s): %s\n", optarg, strerror(errno));
+				gopt.err_fp = gopt.log_fp;
+				break;
 			case 'p':
 				gopt.port = atoi(optarg);
 				break;
@@ -188,6 +219,32 @@ do_getopt(int argc, char *argv[])
 	}
 }
 
+static void
+cb_gs_log(struct _gs_log_info *l)
+{
+	if (l == NULL)
+		return;
+
+#ifndef DEBUG
+	// Return if this is _NOT_ a DEBUG-build but we get a TYPE_DEBUG
+	// (should not happen).
+	if (l->type == GS_LOG_TYPE_DEBUG)
+		return;
+#endif
+
+	FILE *fp = gopt.log_fp;
+	if (l->type == GS_LOG_TYPE_ERROR)
+		fp = gopt.err_fp;
+
+	if (fp == NULL)
+		return;
+
+	if (l->level > gopt.verbosity)
+		return; // Not interested. 
+
+	fprintf(fp, "%s %s\n", GS_logtime(), l->msg);
+	fflush(fp);
+}
 
 #define BEV_ERR_ADD(dst, end, rem, what, check)  do{ \
 	if (!(what & check)) { break; } \
@@ -262,5 +319,11 @@ GS_hexto128(const char *hex) {
    return ret; 
 }
 
+char *
+GS_addr128hex(char *dst, uint128_t addr)
+{
+	addr = htobe128(addr);
+	return GS_addr2hex(dst, &addr);
+}
 
 

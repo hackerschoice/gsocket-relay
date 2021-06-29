@@ -35,6 +35,27 @@ struct _cli_kill
 	uint128_t addr;
 } __attribute__((__packed__));
 
+struct _cli_stop
+{
+	struct _cli_hdr hdr;
+	uint32_t peer_id;
+	uint128_t addr;
+	uint8_t opcode;
+} __attribute__((__packed__));
+#define GSRN_CLI_OP_STOP_LISTEN_TCP      (0x01)
+
+struct _cli_set
+{
+	struct _cli_hdr hdr;
+	uint32_t peer_id;
+	uint128_t addr;
+	uint8_t opcode;
+	uint8_t version_major;
+	uint8_t version_minor;
+} __attribute__((__packed__));
+
+#define GSRN_CLI_OP_SET_PROTO          (0x01)
+
 ///////////// CLI responses
 
 struct _flagstr
@@ -82,10 +103,13 @@ struct _cli_list_r
 
 #define GSRN_FL_CLI_LIST_START        (0x01)
 
-#define GSRN_CLI_TYPE_LIST            (0x01)
-#define GSRN_CLI_TYPE_LIST_RESPONSE   (0x01)
-#define GSRN_CLI_TYPE_LOG             (0x02)
-#define GSRN_CLI_TYPE_KILL            (0x03)  // Kill a session (by ID or ADDR)
-#define GSRN_CLI_TYPE_MSG             (0x04)
+#define GSRN_CLI_TYPE_LIST_RESPONSE   (0x01)  // s2c - response (to list request)
+#define GSRN_CLI_TYPE_LOG             (0x02)  // s2c - log message
+#define GSRN_CLI_TYPE_MSG             (0x04)  // s2c - message (to display)
+
+#define GSRN_CLI_TYPE_LIST            (0x01)  // c2s - list all connected clients
+#define GSRN_CLI_TYPE_KILL            (0x03)  // c2s - Kill a session (by ID or ADDR)
+#define GSRN_CLI_TYPE_STOP            (0x05)  // c2s - stop listening tcp/gsocket
+#define GSRN_CLI_TYPE_SET             (0x06)  // c2s - set a variable (config)
 
 #endif // !__GSRN_PROTO_CLI_H__

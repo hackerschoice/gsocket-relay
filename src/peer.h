@@ -71,6 +71,7 @@ struct _peer
 	uint8_t version_minor;
 	// BPS buckets
 	uint32_t bps_last;       // 300 => 300 bps
+	uint32_t bps_max;
 	uint64_t bps_last_usec;  // timestamp when last updated 'bps_last'
 	uint64_t bps_last_inout; //
 

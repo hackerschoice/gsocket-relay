@@ -23,6 +23,7 @@ struct _gopt
 {
 	prg_t prg;               // GSRND or CLI
 	FILE *err_fp;
+	FILE *log_fp;
 	SSL_CTX *ssl_ctx;
 	uint32_t ip_cli;         // 127.0.0.1
 	uint16_t port_cli;
@@ -32,9 +33,9 @@ struct _gopt
 	uint32_t ip_cnc;         // IP of concentrator
 	int verbosity;
 	struct event_base *evb;      // libevent base
-	struct event ev_listen;      // Listening socket event
-	struct event ev_listen_ssl;  // Listening socket event
-	struct event ev_listen_con;  // Listening socket event
+	struct event *ev_listen;      // Listening socket event
+	struct event *ev_listen_ssl;  // Listening socket event
+	struct event *ev_listen_con;  // Listening socket event
 	int is_concentrator;
 
 	uint64_t usec_now;
@@ -55,9 +56,12 @@ struct _gcli
 // Server (daemon) globals
 struct _gd
 {
-	struct event ev_listen_cli;
+	struct event *ev_listen_cli;
 	// Unique ID (like PID) for linked-list entries
 	uint32_t peer_id;
+	// Minimum accepted protocol version
+	uint8_t min_version_major;
+	uint8_t min_version_minor;
 };
 
 #endif // !__GSRN_GOPT_H__
