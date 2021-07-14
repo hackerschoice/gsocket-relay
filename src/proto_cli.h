@@ -50,11 +50,14 @@ struct _cli_set
 	uint32_t peer_id;
 	uint128_t addr;
 	uint8_t opcode;
+	uint8_t opvalue1;
+	uint8_t opvalue2;
 	uint8_t version_major;
 	uint8_t version_minor;
 } __attribute__((__packed__));
 
 #define GSRN_CLI_OP_SET_PROTO          (0x01)
+#define GSRN_CLI_OP_SET_LOG_IP         (0x02)
 
 ///////////// CLI responses
 
@@ -90,8 +93,6 @@ struct _cli_list_r
 	uint32_t age_sec;        // Age in sec in current state (LISTEN, WAITING, CONNECTED etc) 
 	char bps[GS_BPS_MAXSIZE];
 	uint8_t flags;           // GSRN_FL_CLI_LIST_START
-	// uint8_t version_major;
-	// uint8_t version_minor;
 	union {
 		uint8_t flagstr[7];
 		struct _flagstr fl;

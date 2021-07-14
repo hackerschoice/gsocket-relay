@@ -19,5 +19,9 @@ void close_del_ev(struct event **evptr);
 const char *PEER_L_name(uint8_t pl_id);
 uint128_t GS_hexto128(const char *hex);
 char * GS_addr128hex(char *dst, uint128_t addr);
+const char *gs_log_ipport2str_r(char *dst, size_t dsz, uint32_t ip, uint16_t port);
+const char *gs_log_ipport2str(uint32_t ip, uint16_t port);
+const char *gs_log_in_addr2str_r(char *dst, size_t dsz, struct sockaddr_in *addr_in);
+const char *gs_log_in_addr2str(struct sockaddr_in *addr_in);
 
 #endif // !__GSRN_UTILS_H__

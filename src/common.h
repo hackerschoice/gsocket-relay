@@ -214,6 +214,7 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 # define DEBUGF_M(a...) do{DEBUGF_T("\033[1;35m", a); } while(0)
 # define DEBUGF_C(a...) do{DEBUGF_T("\033[1;36m", a); } while(0)
 # define DEBUGF_W(a...) do{DEBUGF_T("\033[1;37m", a); } while(0)
+# define DEBUGF_HALT(a...) do{DEBUGF_R(a); while (1) { sleep(1000000); } } while(0)
 #else // DEBUG
 # define DEBUGF(a...)
 # define DEBUGF_R(a...)
@@ -224,7 +225,9 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 # define DEBUGF_C(a...)
 # define DEBUGF_W(a...)
 # define DEBUGF_A(a...)
+# define DEBUGF_HALT(a...)
 #endif
+
 
 // Increase ptr by number of characters added to ptr.
 #define SXPRINTF(ptr, len, a...) do {\

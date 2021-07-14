@@ -81,14 +81,14 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 
 
 	memset(&msg.flagstr, '-', sizeof msg.flagstr);
-	if (p->flags & FL_PEER_IS_SAW_CLIENTHELO)
+	if (p->flags & FL_PEER_IS_SAW_SSL_CLIENTHELO)
 		msg.fl.ssl = 'S';
 	uint8_t gpflags = p->gs_proto_flags;
 	msg.fl.major = p->version_major;
 	msg.fl.minor = p->version_minor;
 	if (p->buddy != NULL)
 	{
-		if (p->buddy->flags & FL_PEER_IS_SAW_CLIENTHELO)
+		if (p->buddy->flags & FL_PEER_IS_SAW_SSL_CLIENTHELO)
 			msg.fl.ssl = 'S';
 		gpflags |= p->buddy->gs_proto_flags;
 		// Report the lowest of both version numbers to CLI.
@@ -221,6 +221,18 @@ cb_cli_set(struct evbuffer *eb, size_t len, void *arg)
 		gd.min_version_minor = msg.version_minor;
 
 		CLI_printf(c, "Minimum Protocol set to %u.%u", gd.min_version_major, gd.min_version_minor);
+		return;
+	}
+
+	if (msg.opcode == GSRN_CLI_OP_SET_LOG_IP)
+	{
+		const char *str;
+		gd.is_log_ip = msg.opvalue1;
+		str = "enabled";
+		if (msg.opvalue1 == 0)
+			str = "disabled";
+
+		CLI_printf(c, "IP Address logging %s", str);
 		return;
 	}
 

@@ -83,6 +83,8 @@ peer_set_gs_info(struct _peer *p, struct _gs_hdr_lc *msg)
 		DEBUGF_C("WAITING\n");
 }
 
+
+
 #define GS_STR_OBSOLETE_CLIENT      "Obsolete client detected."
 void
 cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
@@ -97,11 +99,11 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 
 	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
 	{
-		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (listen) %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (listen) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
 		goto err;
 	}
-	GS_LOG_V("[%6u] %32s LISTEN  %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+	GS_LOG_V("[%6u] %32s LISTEN  %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 	if (gsrn_listen(p, msg.token) != 0)
 		goto err;
@@ -135,11 +137,14 @@ buddy_up(struct _peer *server, struct _peer *client)
 	bufferevent_set_timeouts(client->bev, TVSEC(GSRN_ACCEPT_TIMEOUT), NULL);
 
 	char s_ipport[32];
-	snprintf(s_ipport, sizeof s_ipport, "%s:%u", inet_ntoa(server->addr_in.sin_addr), ntohs(server->addr_in.sin_port));
-	char c_ipport[32];
-	snprintf(c_ipport, sizeof c_ipport, "%s:%u", inet_ntoa(client->addr_in.sin_addr), ntohs(client->addr_in.sin_port));
+	snprintf(s_ipport, sizeof s_ipport, "%s", gs_log_in_addr2str(&server->addr_in));
 	
-	GS_LOG("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, c_ipport, s_ipport);
+	GS_LOG("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, gs_log_in_addr2str(&client->addr_in), s_ipport);
+
+	DEBUGF_G("%c Server-%d fd=%d bev=%p\n", IS_CS(server), server->id, bufferevent_getfd(server->bev), server->bev);
+	DEBUGF_G("%c Client-%d fd=%d bev=%p\n", IS_CS(client), client->id, bufferevent_getfd(client->bev), client->bev);
+	client->bps_last_usec = client->state_usec;
+	server->bps_last_usec = server->state_usec;
 }
 
 void
@@ -153,7 +158,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 
 	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
 	{
-		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (connect) %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (connect) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
 		goto err;
 	}
@@ -187,7 +192,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 			{
 				p->flags |= FL_PEER_IS_SHORTWAIT;
 			} else {
-				GS_LOG_V("[%6u] %32s CON-REFUSED %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+				GS_LOG_V("[%6u] %32s CON-REFUSED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 				GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
 				goto err;
@@ -198,7 +203,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		ret = PEER_add(p, PEER_L_WAITING, NULL);
 		if (ret != 0)
 		{
-			GS_LOG_V("[%6u] %32s CON-DENIED %s:%u v%u.%u", p->id, GS_addr128hex(NULL, p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), p->version_major, p->version_minor);
+			GS_LOG_V("[%6u] %32s CON-DENIED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 			GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNDENIED, "Not allowed to connect.");
 			goto err;
@@ -222,15 +227,17 @@ err:
 static void
 flush_relay(struct _peer *p)
 {
-	struct evbuffer *in = bufferevent_get_input(p->bev);
+	struct evbuffer *evb = bufferevent_get_input(p->bev);
 
-	if (in == NULL)
+	if (evb == NULL)
 		return;
 
-	if (evbuffer_get_length(in) > 0)
+	size_t sz = evbuffer_get_length(evb);
+	DEBUGF("Flushing %zu to %c\n", sz, IS_CS(p->buddy));
+	if (sz > 0)
 	{
-		PEER_stats_update(p, in);
-		bufferevent_write_buffer(p->buddy->bev, in);
+		PEER_stats_update(p, evb);
+		bufferevent_write_buffer(p->buddy->bev, evb);
 	}
 }
 
@@ -259,18 +266,27 @@ cb_gsrn_accept(struct evbuffer *eb, size_t len, void *arg)
 	bufferevent_setcb(p->bev, cb_bev_relay_read, cb_bev_write, cb_bev_status, p);
 	PKT_free(&p->pkt); // stop processing packets. Might still be more data in input buffer...
 	PEER_L_mv(p, PEER_L_CONNECTED);
-	// Libevent does not trigger EV_READ for data that is left inside the input buffer (doh!).
+
+	// PKT_dispatch may have received a GS-ACCEPT (and called this function) but there
+	// is more data in this peer's in-buffer. Copy it to the buddy's output buffer
 	flush_relay(p);
+	// And start reading again (all data will be appended to buddy's out-buffer
+	// and if that gets to large then it will stop...)
+	bufferevent_enable(p->bev, EV_READ);
 
 	if (!PEER_IS_ACCEPT_RECEIVED(buddy)) // FALSE
 	{
 		PEER_L_mv(buddy, PEER_L_ACCEPTED);
-		DEBUGF_G("Waiting for ACCEPT from buddy.\n");
+		DEBUGF_G("Waiting for ACCEPT from %c.\n", IS_CS(buddy));
 		return;
 	}
 
-	DEBUGF_Y("%c CONNECTED\n", IS_CS(p));
+	// Enable EV_READ in case it was disabled by cb_bev_read(). This may have happened
+	// before the GS-ACCEPT was received and while there was still data that needed to
+	// be send to this peer.
+	bufferevent_enable(p->buddy->bev, EV_READ);
 
+	DEBUGF_Y("%c CONNECTED fd=%d\n", IS_CS(p), bufferevent_getfd(p->bev));
 }
 
 void
@@ -281,39 +297,41 @@ cb_gsrn_ping(struct evbuffer *eb, size_t len, void *arg)
 
 	evbuffer_remove(eb, &msg, sizeof msg);
 
-	DEBUGF_G("%c PING received\n", IS_CS(p));
+	DEBUGF_G("%c PING received fd=%d\n", IS_CS(p), p->fd);
 	GSRN_send_pong(p, &msg.payload[0]);
 }
 
-// There seems to be no way finding out when a remote host has called 'close()'
-// after it called shutdown(). All those calls return that the socket is still
-// valid and open even after the remote has called 'close()'.
-// static void
-// cb_evt_shutdown(int fd_notused, short event, void *arg)
-// {
-// 	struct _peer *p = (struct _peer *)arg;
-// 	int err = 0;
-// 	socklen_t len = sizeof (err);
-// 	int ret;
 
-// 	ret = getsockopt(p->fd, SOL_SOCKET, SO_ERROR, &err, &len);
-// 	DEBUGF("shutdown fd=%d ret=%d errno=%d so-err=%d\n", p->fd, ret, errno, err);
+void
+cb_shutdown_complete(void *arg)
+{
+	struct _peer *p = (struct _peer *)arg;
+	struct _peer *buddy = p->buddy;
 
-// 	struct sockaddr_in addr;
-// 	len = sizeof (addr);
-// 	ret = getpeername(p->fd, (struct sockaddr *)&addr, &len);
-// 	DEBUGF("peer ret=%d, %s %d\n", ret, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-// 	ret = write(p->fd, &len, 0);
-// 	DEBUGF("write ret=%d errno=%d\n", ret, errno);
-// 	evtimer_add(p->evt_shutdown, TVSEC(1));
-// }
+	if (buddy == NULL)
+	{
+		PEER_free(p, 0);
+		return;
+	}
+
+	if (PEER_IS_SHUT_WR_SENT(buddy))
+	{
+		PEER_free(p, 0);
+		PEER_free(buddy, 0);
+		return;
+	}
+
+	// HERE: buddy has not called sys_shutdown() yet.
+	DEBUGF("[%6u] %c Waiting for buddy...(connection is half-close now)\n", p->id, IS_CS(p));
+}
 
 void
 cb_bev_status(struct bufferevent *bev, short what, void *arg)
 {
 	struct _peer *p = (struct _peer *)arg;
+	struct _peer *buddy = p->buddy;
 
-	DEBUGF_Y("%c status event=%d (%s)\n", IS_CS(p), what, BEV_strerror(what));
+	DEBUGF_Y("[%6u] %c peer=%p bev=%p status event=%d (%s)\n", p->id, IS_CS(p), p, bev, what, BEV_strerror(what));
 	if (what & BEV_EVENT_CONNECTED)
 	{
 		DEBUGF_Y("Connected\n");
@@ -323,85 +341,117 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 
 	if (what & BEV_EVENT_TIMEOUT)
 	{
-		DEBUGF_C("***TIMEOUT*** (is_goodbye=%d)\n", PEER_IS_GOODBYE(p));
+		DEBUGF_C("[%6u] %c ***TIMEOUT***\n", p->id, IS_CS(p));
+		DEBUGF_HALT("HALT\n");
+		// We sent SHUT_WR to this peer but are not receiving any data from this peer.
+		PEER_free(p, 0);
+		if (buddy)
+			PEER_free(buddy, 0);
+		return;
+	}
+
+	// Waiting/Listening peer disconnects (before GS-CONNECT)
+	if (buddy == NULL)
+	{
+		DEBUGF_R("NO BUDDY\n");
+		PEER_shutdown(p, cb_shutdown_complete);
+		p = NULL;
+		return;
 	}
 
 	if (what & BEV_EVENT_EOF)
 	{
-		DEBUGF("p=%p, buddy=%p\n", p, p->buddy);
-		if (p->buddy == NULL)
-			goto err; // no buddy connected.
-
 		if (PEER_IS_EOF_RECEIVED(p))
-			goto err; // 2nd EOF. Treat as ERROR.
-
-		if (PEER_IS_EOF_RECEIVED(p->buddy))
-			goto err; // Both sides decided to stop. Free both.
+		{
+			// FIXME: Odd, EV_READ gets disabled (see below) but libevent invokes this
+			// twice every once in a while...
+			// PEER_free(p, 0); // pointer may have gotten freed already. 
+			return;
+		}
 
 		p->flags |= FL_PEER_IS_EOF_RECEIVED;
 
-		// if (p->evt_shutdown != NULL)
-		// 	DEBUGF_R("OOPS. Can not happen.\n");
-		// p->evt_shutdown = evtimer_new(gopt.evb, cb_evt_shutdown, p);
-		// evtimer_add(p->evt_shutdown, TVSEC(1));
-
-		// soft close(). Inform buddy that no more data is coming
-		// his way. Buddy may still send data to us (the socket is not
-		// closed for reading yet).
-		shutdown(p->buddy->fd, SHUT_WR);
-		// Stop reading
+		// EOF received. Stop reading
+		DEBUGF_W("%c Stopping EV_READ\n", IS_CS(p));
 		bufferevent_disable(p->bev, EV_READ);
 
-		// This connection is half-dead. Free it unless the buddy sends data..
-		bufferevent_set_timeouts(p->buddy->bev, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT), NULL);
+		if (!PEER_IS_EOF_RECEIVED(buddy))
+		{
+			DEBUGF_W("[%6u] %c fd=%d Setting write shutdown-idle-timeout\n", p->id, IS_CS(p), p->fd);
+			// This connection is half-dead. Free if buddy is not sending data...
+			bufferevent_set_timeouts(buddy->bev, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT), NULL);
+		}
+
+		// Forward SHUT_WR to buddy (We wont send any more data)
+		// MIGHT FREE BUDDY and PEER.
+		PEER_shutdown(buddy, cb_shutdown_complete);
+		buddy = NULL;
 
 		return;
 	}
 
-	// Any other error-event is bad (disconnect)
-err:
-	PEER_free(p, 1);
+	// Any other error-event is bad (disconnect hard) 
+	PEER_free(p, 0);
 }
 
 void
 cb_bev_write(struct bufferevent *bev, void *arg)
 {
 	struct _peer *p = (struct _peer *)arg;
+	struct _peer *buddy = (struct _peer *)p->buddy;
 
-	// DEBUGF("EV_WRITE (all data written)\n");
+	// DEBUGF("%c write done peer=%p buddy=%p\n", IS_CS(p), p, buddy);
 	// All data written. Enable reading again.
-	if (PEER_IS_GOODBYE(p))
+
+	if (PEER_IS_WANT_SEND_SHUT_WR(p))
 	{
-		PEER_free(p, 1);
+		PEER_shutdown(p, NULL /* already set*/);
+		p = NULL;
 		return;
 	}
-	if (PEER_IS_EOF_RECEIVED(p))
-		return; // Do not enable reading if we received EOF already
 
-	bufferevent_enable(bev, EV_READ);
+	if ((buddy != NULL) && PEER_IS_ACCEPT_RECEIVED(p))
+	{
+		bufferevent_enable(buddy->bev, EV_READ);
+		return;
+	}
+
+	// Or if GS-ACCEPT has not been received yet then write
+	// completed and reading from this peer's input should continue
+	// (until GS-ACCEPT is received).
+	bufferevent_enable(p->bev, EV_READ);
+
 }
+
 
 static void
 cb_bev_relay_read(struct bufferevent *bev, void *arg)
 {
 	struct _peer *p = (struct _peer *)arg;
 	struct evbuffer *in = bufferevent_get_input(bev);
-
 	struct _peer *buddy = p->buddy;
-	struct evbuffer *out = bufferevent_get_input(buddy->bev);
-	size_t out_sz = evbuffer_get_length(out);
-
-	// DEBUGF_W("%c read=%zd (out-buf=%zd)\n", IS_CS(p), evbuffer_get_length(in), out_sz);
-	if (out_sz > 0)
-	{
-		DEBUGF_R("%c Still data in output buffer (%zu). Stop reading..\n", IS_CS(p), out_sz);
-		bufferevent_disable(bev, EV_READ);
-	}
+	size_t in_sz = evbuffer_get_length(in);
 
 	PEER_stats_update(p, in);
+
+	// DEBUGF("%c in_sz=%zd\n", IS_CS(p), in_sz);
+
 	bufferevent_write_buffer(buddy->bev, in);
+
+	size_t bsz = evbuffer_get_length(bufferevent_get_output(buddy->bev));
+
+	if (bsz >= MAX(in_sz, 4096) * 4)
+	{
+		DEBUGF_R("[%6u] %c Still data in %c's output buffer (%zu). Stop reading..\n", p->id, IS_CS(p), IS_CS(buddy), bsz);
+		bufferevent_disable(bev, EV_READ);
+	}
 }
 
+// Read data from peer. May add data to p->bev=>out and may stop reading
+// if there is still data to send to itself (e.g. replies).
+// Special care needs to be taken when moving to CONNECT state and when
+// this peer's bev=>in is written to buddy's bev=>out: Data left here in the out-buffer
+// need to be flushed to the buddy.
 void
 cb_bev_read(struct bufferevent *bev, void *arg)
 {
@@ -413,15 +463,21 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 
 	if (out_sz > 0)
 	{
+		// HERE: Only happens when PKT_dispatch() adds a message to the out-buffer
+		// and it hasnt been send yet to _this_ peer (not the buddy).
 		DEBUGF_R("%c Still data in output buffer (%zu). Stop reading..\n", IS_CS(p), out_sz);
 		bufferevent_disable(bev, EV_READ);
 	}
 
 	// Dispatch protocol message
 	PKT_dispatch(&p->pkt, in);
-	DEBUGF("Input buffer size=%zu after PKT_dispatch()\n", evbuffer_get_length(in));
+	// May have enabled EV_READ (if a gs-accept was received).
+	// HERE: PKT_dispatch() may have added data to _this_ peer's out-buffer
+	// and may have enable EV_READ (for example when buddy got connected and all
+	// further in-data should be send to the peer's buddy out-buffer).
 
-	DEBUGF("Output Buffer size=%zu after PKT_dispatch()\n", evbuffer_get_length(out));
+	// DEBUGF("Input buffer size=%zu after PKT_dispatch()\n", evbuffer_get_length(in));
+	// DEBUGF("Output Buffer size=%zu after PKT_dispatch()\n", evbuffer_get_length(out));
 }
 
 // Assign fd to bio and create peer and events for this peer.

@@ -59,6 +59,7 @@ struct _gd
 	struct event *ev_listen_cli;
 	// Unique ID (like PID) for linked-list entries
 	uint32_t peer_id;
+	int is_log_ip;
 	// Minimum accepted protocol version
 	uint8_t min_version_major;
 	uint8_t min_version_minor;

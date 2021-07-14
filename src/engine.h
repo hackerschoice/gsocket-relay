@@ -16,6 +16,8 @@ void cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg);
 void cb_gsrn_accept(struct evbuffer *eb, size_t len, void *arg);
 void cb_gsrn_ping(struct evbuffer *eb, size_t len, void *arg);
 
+void cb_shutdown_complete(void *p);
+
 void init_engine(void);
 
 #endif // !__GSRN_ENGINE_H__

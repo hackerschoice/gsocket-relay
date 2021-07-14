@@ -53,7 +53,7 @@ init_defaults(prg_t prg)
 {
 	gopt.prg = prg;
 	gopt.err_fp = stderr;
-	gopt.log_fp = stdout;
+	gopt.log_fp = stderr;
 	gopt.ip_cli = ntohl(inet_addr("127.0.0.1"));
 	gopt.port_cli = CLI_DEFAULT_PORT;
 	// gopt.port_ssl = CLI_DEFAULT_PORT_SSL;
@@ -73,7 +73,7 @@ add_listen_sock(uint32_t ip, int port, struct event **evptr, event_callback_fn c
 {
 	if (evptr == NULL)
 		return;
-	
+
 	if (port <= 0)
 		return;
 
@@ -168,6 +168,8 @@ usage(char *err)
 " -c <port>     TCP port of cnc [default=%d]\n"
 " -d <IP>       Destination IP of CNC server [default=none]\n"
 " -L <file>     Logfile [default=stderr]\n"
+" -v            Verbosity level\n"
+" -a            Log IP addresses [disabled by default]\n"
 "", VERSION, GSRN_DEFAULT_PORT, GSRN_DEFAULT_PORT_SSL, GSRN_DEFAULT_PORT_CON);
 
 	if (err)
@@ -182,7 +184,7 @@ do_getopt(int argc, char *argv[])
 	int c;
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "L:p:P:c:d:hv")) != -1)
+	while ((c = getopt(argc, argv, "L:p:P:c:d:hva")) != -1)
 	{
 		switch (c)
 		{
@@ -209,6 +211,9 @@ do_getopt(int argc, char *argv[])
 				break;
 			case 'v':
 				gopt.verbosity += 1;
+				break;
+			case 'a':
+				gd.is_log_ip = 1;
 				break;
 			case 'h':
 				usage(NULL);
@@ -294,12 +299,15 @@ PEER_L_name(uint8_t pl_id)
 	return peer_l_names[pl_id];
 }
 
-static const long hextable[] = {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winitializer-overrides"
+static const uint8_t hextable[] = {
    [0 ... 255] = -1, // bit aligned access into this table is considerably
    ['0'] = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, // faster for most modern processors,
-   ['A'] = 10, 11, 12, 13, 14, 15,       // for the space conscious, reduce to
-   ['a'] = 10, 11, 12, 13, 14, 15        // signed char.
+   ['A'] = 10, 11, 12, 13, 14, 15,
+   ['a'] = 10, 11, 12, 13, 14, 15 
 };
+#pragma GCC diagnostic pop
 
 uint32_t
 GS_hexto32(const char *hex) {
@@ -325,5 +333,53 @@ GS_addr128hex(char *dst, uint128_t addr)
 	addr = htobe128(addr);
 	return GS_addr2hex(dst, &addr);
 }
+
+// Do not log ip addresses or port numbers by default. This function
+// returns anonymized IP:PORT string unless ip-logging has been enabled.
+//
+// Convert an IP/PORT in HBO to a string (if logging allows this).
+const char *
+gs_log_ipport2str_r(char *dst, size_t dsz, uint32_t ip, uint16_t port)
+{
+	if (gd.is_log_ip == 0)
+	{
+		snprintf(dst, dsz, "#.#.#.#:%u", port);
+		return dst;
+	}
+
+	ip = htonl(ip);
+	snprintf(dst, dsz, "%s:%u", int_ntoa(ip), port);
+
+	return dst;
+}
+
+// HostByteOrder (HBO)
+const char *
+gs_log_ipport2str(uint32_t ip, uint16_t port)
+{
+	static char ipport[32];
+
+	return gs_log_ipport2str_r(ipport, sizeof ipport, ip, port);
+}
+
+const char *
+gs_log_in_addr2str_r(char *dst, size_t dsz, struct sockaddr_in *addr_in /*NBO*/)
+{
+	if (addr_in == NULL)
+		return "#.#.#.#:0";
+
+	return gs_log_ipport2str_r(dst, dsz, ntohl(addr_in->sin_addr.s_addr), ntohs(addr_in->sin_port));
+}
+
+const char *
+gs_log_in_addr2str(struct sockaddr_in *addr_in /*NBO*/)
+{
+	static char ipport[32];
+
+	return gs_log_in_addr2str_r(ipport, sizeof ipport, addr_in);
+}
+
+
+
 
 

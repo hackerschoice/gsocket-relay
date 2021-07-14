@@ -1,6 +1,6 @@
 dnl Process this File with autoconf to produce a configure script.
 AC_PREREQ([2.69])
-AC_INIT([gsocket-relay],[1.0.2])
+AC_INIT([gsocket-relay],[1.0.4])
 AC_CONFIG_AUX_DIR(config)
 AC_CANONICAL_TARGET
 
@@ -75,22 +75,15 @@ AC_ARG_WITH([gsocket-dir],
 		LIBGSOCKET_PATH="${withval}/lib"
 	],
 	[
-		dnl try ./gsocket/include, ./ or ../gsocket/include
+		dnl try ./gsocket/include
 		dnl systemwide installation is the fallback.
 		if test -f "${srcdir}/gsocket/include/gsocket/gsocket.h"; then
 			GSOCKET_INC="${srcdir}/gsocket/include"
 			LIBGSOCKET_PATH="${srcdir}/gsocket/lib"
-		elif test -f "${srcdir}/../gsocket/include/gsocket/gsocket.h"; then
-			GSOCKET_INC="${srcdir}/../gsocket/include"
-			LIBGSOCKET_PATH="${srcdir}/../gsocket/lib"
 		fi
 	])
 
 if test "x$GSOCKET_INC" != x; then
-dnl	case "$GSOCKET_INC" in
-dnl		# Relative paths
-dnl		./*|../*)       GSOCKET_INC=$(cd "$GSOCKET_INC"; pwd)
-dnl	esac
 	dnl Convert path to absolute path (and without .././ shit)
 	GSOCKET_INC=$(cd "$GSOCKET_INC"; pwd)
 	LIBGSOCKET_PATH=$(cd "$LIBGSOCKET_PATH"; pwd)
@@ -189,7 +182,7 @@ if test x"$STATIC_SSL" != xyes; then
   AC_CHECK_LIB([ssl], [SSL_new], [], [AC_MSG_ERROR([libssl not found])])
 fi
 
-AC_CHECK_LIB(gsocket, GS_new, [], [AC_MSG_ERROR([libgsocket not found. Compile gsocket source in ../gsocket first.])])
+AC_CHECK_LIB(gsocket, GS_new, [], [AC_MSG_ERROR([libgsocket not found. Compile gsocket in ./gsocket or use --with-gsocket-dir.])])
 AC_CHECK_FUNCS(gettimeofday memcpy strchr strlcat)
 
 AC_ARG_ENABLE([debug],

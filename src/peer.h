@@ -42,6 +42,8 @@ struct _peer_l_mgr
 };
 #define FL_PL_IS_TOKEN_SET   (0x01)
 
+typedef void (*shutdown_complete_func_t)(void *p);
+
 struct _peer
 {
 	SSL *ssl;
@@ -50,16 +52,22 @@ struct _peer
 	uint128_t addr;
 	struct bufferevent *bev;
 	PKT pkt;
-	// uint8_t token[GS_TOKEN_SIZE]; // might not need this here..
 	int flags;
 	uint8_t gs_proto_flags;  // flags from _gs_connect/_gs_listen
 
 	struct _peer_l_root *plr;
 	TAILQ_ENTRY(_peer) ll;        // linked entries.
+	// uint64_t delayed_free_usec;        // when this peer started to wait...
+
+	// struct event *evt_peer_shutdown;
+	struct event *evt_tioc;
+	int tioc_count;
+	int tioc_delay_ms;
+	struct event *evt_shutdown_timeout;
+	shutdown_complete_func_t shutdown_complete_func;
+	int shutdown_complete_value;
 
 	struct _peer *buddy;
-
-	// struct event *evt_shutdown;   // shutdown() received. Periodically check if socket is still connected
 
 	// For 'stats' and 'cli-list'
 	struct sockaddr_in addr_in;
@@ -81,27 +89,36 @@ struct _peer
 typedef void (*walk_peers_func_t)(struct _peer *p, struct _peer_l_root *plr, void *arg);
 typedef void (*peer_func_t)(struct _peer *p, void *arg);
 
-#define FL_PEER_IS_SERVER         (0x01)
-#define FL_PEER_IS_CLIENT         (0x02)
-#define FL_PEER_IS_ACCEPT_RECV    (0x04)  // Peer sent ACCEPTT after _gs_start msg
-#define FL_PEER_IS_GOODBYE        (0x08)  // PEER_goodbye was called.
-#define FL_PEER_IS_EOF_RECEIVED   (0x10)
-#define FL_PEER_IS_SHORTWAIT      (0x20)
-#define FL_PEER_IS_SAW_CLIENTHELO (0x40)  // Detected an TLS ClientHelo
+#define FL_PEER_IS_SERVER                (0x01)
+#define FL_PEER_IS_CLIENT                (0x02)
+#define FL_PEER_IS_ACCEPT_RECV           (0x04)  // Peer sent ACCEPTT after _gs_start msg
+// #define FL_PEER_IS_GOODBYE               (0x08)  // PEER_goodbye was called.
+#define FL_PEER_IS_EOF_RECEIVED          (0x10)
+#define FL_PEER_IS_SHORTWAIT             (0x20)
+#define FL_PEER_IS_SAW_SSL_CLIENTHELO    (0x40)  // Detected an TLS ClientHelo
+#define FL_PEER_IS_WANT_SEND_SHUT_WR     (0x80)
+#define FL_PEER_IS_WANT_FREE            (0x100)  // PEER_free() as soon as all data is written.
+#define FL_PEER_IS_SHUT_WR_SENT         (0x200)
 
-#define PEER_IS_SERVER(p)           ((p)->flags & FL_PEER_IS_SERVER)
-#define PEER_IS_CLIENT(p)           ((p)->flags & FL_PEER_IS_CLIENT)
-#define PEER_IS_ACCEPT_RECEIVED(p)  ((p)->flags & FL_PEER_IS_ACCEPT_RECV)
-#define PEER_IS_GOODBYE(p)          ((p)->flags & FL_PEER_IS_GOODBYE)
-#define PEER_IS_EOF_RECEIVED(p)     ((p)->flags & FL_PEER_IS_EOF_RECEIVED)
-#define PEER_IS_SHORTWAIT(p)        ((p)->flags & FL_PEER_IS_SHORTWAIT)
+#define PEER_IS_SERVER(p)              ((p)->flags & FL_PEER_IS_SERVER)
+#define PEER_IS_CLIENT(p)              ((p)->flags & FL_PEER_IS_CLIENT)
+#define PEER_IS_ACCEPT_RECEIVED(p)     ((p)->flags & FL_PEER_IS_ACCEPT_RECV)
+// #define PEER_IS_GOODBYE(p)             ((p)->flags & FL_PEER_IS_GOODBYE)
+#define PEER_IS_EOF_RECEIVED(p)        ((p)->flags & FL_PEER_IS_EOF_RECEIVED)
+#define PEER_IS_SHORTWAIT(p)           ((p)->flags & FL_PEER_IS_SHORTWAIT)
+#define PEER_IS_WANT_SEND_SHUT_WR(p)   ((p)->flags & FL_PEER_IS_WANT_SEND_SHUT_WR)
+#define PEER_IS_WANT_FREE(p)           ((p)->flags & FL_PEER_IS_WANT_FREE)
+#define PEER_IS_SHUT_WR_SENT(p)        ((p)->flags & FL_PEER_IS_SHUT_WR_SENT)
 
 // Return S, C or - for Server, Client or Unknown (used by DEBUGF)
-#define IS_CS(p)   (p)->flags & FL_PEER_IS_SERVER?'S':(p)->flags & FL_PEER_IS_CLIENT?'C':'-'
+#define IS_CS(p)   (p)->flags & FL_PEER_IS_SERVER?'S':(p)->flags & FL_PEER_IS_CLIENT?'C':'#'
 
 void PEER_goodbye(struct _peer *p);
 int PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token);
 void PEER_free(struct _peer *p, int is_free_buddy);
+void PEER_try_free(struct _peer *p);
+void PEER_shutdown(struct _peer *p, shutdown_complete_func_t func);
+
 struct _peer *PEER_new(int fd, SSL *ssl);
 struct _peer_l_mgr *PEER_get_mgr(uint128_t addr);
 void PEER_by_addr(uint128_t addr, peer_func_t cb_peer, void *arg);

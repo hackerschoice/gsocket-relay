@@ -10,7 +10,9 @@
 
 static void cb_evt_linger(int fd_notused, short event, void *arg);
 static void cb_evt_shortwait(int fd_notused, short event, void *arg);
+static void peer_stats_update_bps(struct _peer *p);
 
+#ifdef DEBUG
 static void
 tree_stats(void)
 {
@@ -37,6 +39,7 @@ cb_peers_printall(struct _peer *p, struct _peer_l_root *plr, void *arg)
 
 	DEBUGF("  [%u] %c addr=%s\n", p->id, IS_CS(p), strx128x(p->addr));
 }
+#endif
 
 static struct _peer_l_mgr *
 t_peer_get_mgr(const void *nodep, const VISIT which)
@@ -107,7 +110,7 @@ cb_t_peer_find(const void *needle_a, const void *stack_b)
 	struct _peer_l_mgr *pl_mgr_b = (struct _peer_l_mgr *)stack_b;
 	uint128_t *addr_a = (uint128_t *)needle_a;
 
-	DEBUGF_C("looking for %s @ %p\n", strx128x(*addr_a), stack_b);
+	// DEBUGF_C("looking for %s @ %p\n", strx128x(*addr_a), stack_b);
 
 	if (*addr_a < pl_mgr_b->addr)
 		return -1;
@@ -359,17 +362,8 @@ pl_mgr_t_free(struct _peer_l_mgr *pl_mgr)
 	if (pl_mgr->n_entries > 0)
 		DEBUGF_R("WARN: tree-node still has %d entries\n", pl_mgr->n_entries);
 
-	if (pl_mgr->evt_linger != NULL)
-	{
-		evtimer_del(pl_mgr->evt_linger);
-		event_free(pl_mgr->evt_linger);
-	}
-
-	if (pl_mgr->evt_shortwait != NULL)
-	{
-		evtimer_del(pl_mgr->evt_shortwait);
-		event_free(pl_mgr->evt_shortwait);
-	}
+	XEVT_FREE(pl_mgr->evt_linger);
+	XEVT_FREE(pl_mgr->evt_shortwait);
 
 	tdelete(pl_mgr, &gopt.t_peers.tree, cb_t_peer_by_addr);
 	gopt.t_peers.n_nodes -= 1;
@@ -447,6 +441,104 @@ done:
 	p->plr = NULL;
 }
 
+static void
+peer_sys_shutdown(struct _peer *p)
+{
+	shutdown(p->fd, SHUT_WR);
+	p->flags |= FL_PEER_IS_SHUT_WR_SENT;
+	XEVT_FREE(p->evt_shutdown_timeout);
+	(*p->shutdown_complete_func)(p);
+}
+
+static int
+tioc(struct _peer *p)
+{
+	int ret;
+	int value = 0;
+
+	ret = ioctl(p->fd, TIOCOUTQ, &value);
+	if (ret != 0)
+		return -1;
+
+	p->tioc_count += 1;
+
+	DEBUGF("[%6u] %c fd=%d count=%6d tioc=%d eof=%d\n", p->id, IS_CS(p), p->fd, p->tioc_count, value, PEER_IS_EOF_RECEIVED(p)?1:0);
+
+	return value;
+}
+
+static void
+cb_evt_tioc(int fd, short what, void *arg)
+{
+	struct _peer *p = (struct _peer *)arg;
+
+	if (tioc(p) > 0)
+	{
+		if (p->tioc_delay_ms < 100)
+			p->tioc_delay_ms += 20;
+
+		// Wait again...
+		evtimer_add(p->evt_tioc, TVMSEC(p->tioc_delay_ms));
+		return;
+	}
+
+	XEVT_FREE(p->evt_tioc);
+	peer_sys_shutdown(p);
+}
+
+static void
+cb_evt_shutdown_timeout(int fd, short what, void *arg)
+{
+	struct _peer *p = (struct _peer *)arg;
+	DEBUGF_R("SHUTDOWN-TIMEOUT. Forcing shutdown()\n");
+	peer_sys_shutdown(p);
+}
+
+// Call shutdown() after all pending data (bev & kernel queue) has been send.
+// 1. Wait for bev buffer to empty
+// 2. For for kernel buffer to empty.
+// 3. Call shutdown() & call func
+void
+PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
+{
+	if (func != NULL)
+	{
+		p->shutdown_complete_func = func;
+
+		size_t out_sz  = evbuffer_get_length(bufferevent_get_output(p->bev));
+		if (out_sz > 0)
+		{
+			DEBUGF_R("[%6u] DELAYING SHUT_WR fd=%d (%c) because %zd left in output buffer\n", p->id, p->fd, IS_CS(p), out_sz);
+			p->flags |= FL_PEER_IS_WANT_SEND_SHUT_WR;
+			return;
+		}
+	}
+
+	// HERE: All data from bufferevent has been send.
+
+	if (p->evt_tioc != NULL)
+	{
+		DEBUGF_R("[%6u] %c event timer TIOC already running (func=%p) fd=%d!\n", p->id, IS_CS(p), func, p->fd);
+		return;
+	}
+
+	if (tioc(p) > 0)
+	{
+		// create timer to check kernel buffer again...
+		p->evt_tioc = evtimer_new(gopt.evb, cb_evt_tioc, p);
+		evtimer_add(p->evt_tioc, TVMSEC(10) /*milli-seconds*/);
+
+		// Kernel buffer may never free (for example when peer has stopped reading).
+		// Thus we force call to 'shutdown()' even if there is data left in
+		// the output kernel buffer.
+		p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
+		evtimer_add(p->evt_shutdown_timeout, TVSEC(3) /*seconds*/);
+
+		return;
+	}
+
+	peer_sys_shutdown(p);
+}
 
 // When there are no pending data in the 'out' buffer then free the peer now.
 // Otherwise give I/O time to send the data to the peer and free peer when
@@ -455,24 +547,12 @@ done:
 void
 PEER_goodbye(struct _peer *p)
 {
-	struct evbuffer *out = bufferevent_get_output(p->bev);
-	size_t sz;
-
-	// Remove myself from lists. No longer available to any GS-messages
+	DEBUGF_G("[%6u] %c PEER-GOODBYE\n", p->id, IS_CS(p));
+	// Remove myself from lists. No longer available to any GSRN services (e.g. gs-connect())
 	peer_t_del(p);
 
-	sz = evbuffer_get_length(out);
+	PEER_shutdown(p, cb_shutdown_complete);
 
-	if (sz <= 0)
-	{
-		PEER_free(p, 1);
-		return;
-	}
-
-	DEBUGF("%zu bytes left to write\n", sz);
-	p->flags |= FL_PEER_IS_GOODBYE;
-	bufferevent_set_timeouts(p->bev, NULL, TVSEC(GSRN_FLUSH_TV_TIMEOUT));
-	bufferevent_enable(p->bev, EV_WRITE);
 	PKT_set_void(&p->pkt);
 }
 
@@ -480,7 +560,7 @@ PEER_goodbye(struct _peer *p)
 void
 PEER_free(struct _peer *p, int is_free_buddy)
 {
-	DEBUGF_G("%s peer=%p\n", __func__, p);
+	DEBUGF_G("[%6u] %c %s peer=%p, bev=%p\n", p->id, IS_CS(p), __func__, p, p->bev);
 
 	if (PEER_IS_CLIENT(p))
 	{
@@ -488,33 +568,52 @@ PEER_free(struct _peer *p, int is_free_buddy)
 		GS_format_since(since, sizeof since, GS_USEC_TO_SEC(gopt.usec_now - p->state_usec));
 		char traffic[GS_BPS_MAXSIZE];
 		GS_format_bps(traffic, sizeof traffic, p->in_n + p->out_n, NULL);
+
+		peer_stats_update_bps(p);
 		char bps_max[GS_BPS_MAXSIZE + 2]; // + /s
 		GS_format_bps(bps_max, sizeof bps_max, p->bps_max, "/s");
 
-		GS_LOG("[%6u] %32s DISCON  %s:%u %*s %s %s", p->id, strx128x(p->addr), inet_ntoa(p->addr_in.sin_addr), ntohs(p->addr_in.sin_port), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
+		GS_LOG("[%6u] %32s DISCON  %s %*s %s %s", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
 	}
 
 #ifdef DEBUG
-	// tree_stats();
+	tree_stats();
 	// PEERS_walk(cb_peers_printall, NULL);
 #endif
 
 	// Remove myself from lists
 	peer_t_del(p);
 
+	// size_t sz = p->out_pending;
 	size_t sz = evbuffer_get_length(bufferevent_get_output(p->bev));
 	if (sz > 0)
+	{
 		DEBUGF_R("WARN: Free'ing peer with %zu left in output buffer\n", sz);
+		// size_t hlen = MIN(1024, sz);
+		// char buf[hlen];
+		// ssize_t rsz = evbuffer_copyout(bufferevent_get_output(p->bev), buf, hlen);
+		// HEXDUMP(buf, hlen);
+		// DEBUGF_R("rsz=%zd\n", rsz);
+	}
+	if (p->bev)
+	{
+		bufferevent_disable(p->bev, EV_READ);
+		bufferevent_disable(p->bev, EV_WRITE);
+	}
+
+	XEVT_FREE(p->evt_shutdown_timeout);
+	XEVT_FREE(p->evt_tioc);
 	XBEV_FREE(p->bev);
 
-	// XEVT_FREE(p->evt_shutdown);
-
 	// Unlink myself from my buddy
-	if ((is_free_buddy != 0) && (p->buddy))
+	if (p->buddy != NULL)
 	{
-		// p->buddy->buddy = NULL;
-		PEER_free(p->buddy, 0); // Disconnect my buddy.
-		p->buddy = NULL;
+		p->buddy->buddy = NULL; // unlink myself from my buddy.
+		if (is_free_buddy != 0)
+		{
+			PEER_free(p->buddy, 0); // Disconnect my buddy.
+			p->buddy = NULL;
+		}
 	}
 
 	XCLOSE(p->fd);
@@ -535,7 +634,7 @@ bps_calc(uint32_t old, uint64_t bytes, uint64_t usec)
 	if (usec > 0)
 		bps = (bytes * 1000000) / usec;
 
-	if (usec >= GSRN_BPS_WINDOW)
+	if ((usec >= GSRN_BPS_WINDOW) || (old == 0))
 		return bps;
 
 	// Calculate how much the current bytes / usec are relevant.
@@ -549,6 +648,15 @@ uint32_t
 PEER_get_bps(struct _peer *p)
 {
 	return bps_calc(p->bps_last, (p->in_n + p->out_n) - p->bps_last_inout, gopt.usec_now - p->bps_last_usec);
+}
+
+static void
+peer_stats_update_bps(struct _peer *p)
+{
+	p->bps_last = bps_calc(p->bps_last, (p->in_n + p->out_n) - p->bps_last_inout, gopt.usec_now - p->bps_last_usec);
+	p->bps_max = MAX(p->bps_max, p->bps_last); // record fastest bps
+	p->bps_last_usec = gopt.usec_now;
+	p->bps_last_inout = p->in_n + p->out_n;
 }
 
 void
@@ -565,29 +673,25 @@ PEER_stats_update(struct _peer *p, struct evbuffer *eb)
 		uint8_t c;
 		evbuffer_copyout(eb, &c, 1);
 		if (c == 0x16)
-			p->flags |= FL_PEER_IS_SAW_CLIENTHELO;
+			p->flags |= FL_PEER_IS_SAW_SSL_CLIENTHELO;
 	}
-#ifdef DEBUG
-	if (p->in_n == 0)
-	{
-		uint8_t buf[MIN(128, len)];
-		evbuffer_copyout(eb, buf, MIN(128, len));
-		HEXDUMP(buf, MIN(128, len));
-	}	
-#endif
+// #ifdef DEBUG
+// 	if (p->in_n == 0)
+// 	{
+		// uint8_t buf[MIN(128, len)];
+		// evbuffer_copyout(eb, buf, MIN(128, len));
+		// DEBUGF("%c has %zd bytes in input buffer\n", IS_CS(p), len);
+		// HEXDUMP(buf, MIN(128, len));
+// 	}	
+// #endif
 	p->in_n += len;
 	p->in_last_usec = gopt.usec_now;
 
 	// -----BEGIN BPS STATS-----
-	if (p->bps_last_usec == 0)
-		p->bps_last_usec = gopt.usec_now;
-	else if (gopt.usec_now - p->bps_last_usec >= GSRN_BPS_WINDOW)
+	if (gopt.usec_now - p->bps_last_usec >= GSRN_BPS_WINDOW)
 	{
-		p->bps_last = bps_calc(p->bps_last, (p->in_n + p->out_n) - p->bps_last_inout, gopt.usec_now - p->bps_last_usec);
-		p->bps_max = MAX(p->bps_max, p->bps_last); // record fastest bps
-		p->bps_last_usec = gopt.usec_now;
-		p->bps_last_inout = p->in_n + p->out_n;
-	}
+		peer_stats_update_bps(p);
+	} 
 	// -----END BPS STATS-----
 
 	if (p->buddy == NULL)
@@ -630,7 +734,7 @@ PEER_new(int fd, SSL *ssl)
 		p->bev = bufferevent_socket_new(gopt.evb, fd, ev_opt);
 	}
 
-	bufferevent_setcb(p->bev, cb_bev_read, cb_bev_write /*NULL*/, cb_bev_status, p);
+	bufferevent_setcb(p->bev, cb_bev_read, cb_bev_write, cb_bev_status, p);
 	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_1STMSG_TIMEOUT) /*read*/, NULL /*write*/);
 
 	if (ssl == NULL)

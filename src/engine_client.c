@@ -31,6 +31,9 @@ static void cmd_stop_listen_gsocket(char *opt, char *end);
 static void cmd_set(char *opt, char *end);
 static void cmd_set_proto(char *opt, char *end);
 
+static void cmd_set_log(char *opt, char *end);
+static void cmd_set_log_ip(char *opt, char *end);
+
 #define NOCMD_PRINT() 	do {printf("Unknown command. Try 'help'.\n"); fflush(stdout);} while(0)
 
 // tuples of 'cmd-string' <=> 'function' 
@@ -72,7 +75,13 @@ struct dp dp_stop_listen[] = {
 
 struct dp dp_set[] = {
 	{ NULL      , cmd_nocmd},
-	{ "protocol", cmd_set_proto}
+	{ "protocol", cmd_set_proto},
+	{ "log"     , cmd_set_log}
+};
+
+struct dp dp_set_log[] = {
+	{ NULL      , cmd_nocmd},
+	{ "ip"      , cmd_set_log_ip}
 };
 
 void
@@ -226,10 +235,11 @@ static void
 cmd_set_proto(char *opt, char *end)
 {
 	struct _cli_set msg;
-
 	memset(&msg, 0, sizeof msg);
+	msg.hdr.type = GSRN_CLI_TYPE_SET;
 
 	msg.opcode = GSRN_CLI_OP_SET_PROTO;
+
 	msg.version_major = atoi(opt);
 	char *str;
 	str = strchr(opt, '.');
@@ -237,12 +247,35 @@ cmd_set_proto(char *opt, char *end)
 		goto err;
 	msg.version_minor = atoi(str + 1);
 
-	msg.hdr.type = GSRN_CLI_TYPE_SET;
 
 	CLI_msg(g_cli, &msg, sizeof msg);
 	return;
 err:
 	NOCMD_PRINT();
+}
+
+static void
+cmd_set_log(char *opt, char *end)
+{
+	DP_TRYCALL_NESTED(opt, end, dp_set_log);
+
+	NOCMD_PRINT();
+}
+
+static void
+cmd_set_log_ip(char *opt, char *end)
+{
+	struct _cli_set msg;
+	memset(&msg, 0, sizeof msg);
+	msg.hdr.type = GSRN_CLI_TYPE_SET;
+
+	msg.opcode = GSRN_CLI_OP_SET_LOG_IP;
+
+	msg.opvalue1 = 1;
+	if (opt < end)
+		msg.opvalue1 = atoi(opt);
+
+	CLI_msg(g_cli, &msg, sizeof msg);
 }
 
 static void
@@ -286,6 +319,7 @@ cmd_help(char *opt, char *end)
 "stop listen tcp   - Stop accepting GSRN connections (TCP & SSL)\n"
 "kill <id/addr>    - Disconnect peer by id or address\n"
 "set proto <x.y>   - Set minimum accepted protocol version\n"
+"set log ip        - Enable IP logging\n"
 "quit              - Quit\n"
 "");
 
@@ -355,13 +389,16 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	GS_format_since(idle, sizeof idle, ntohl(msg.idle_sec));
 
 	char ipport[32];
-	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(msg.ip), ntohs(msg.port));
+	uint32_t ip;
+	memcpy(&ip, &msg.ip, sizeof ip);
+	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(ip), ntohs(msg.port));
 
 	printf("[%6u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
 
 	if (msg.buddy_port != 0)
 	{
-		snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(msg.buddy_ip), ntohs(msg.buddy_port));
+		memcpy(&ip, &msg.buddy_ip, sizeof ip); // FIXME: WHy is this not aligned?
+		snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(ip), ntohs(msg.buddy_port));
 		printf(" - %-21s (%*s) %s [%s/s] \n", ipport, GS_SINCE_MAXSIZE - 1, idle, traffic, msg.bps);
 	} else {
 		printf("\n");

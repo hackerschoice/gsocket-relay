@@ -18,5 +18,6 @@
 #define GSRN_SHUTDOWN_IDLE_TIMEOUT  (10)
 
 #define TVSEC(sec)                &(struct timeval){sec, 0} // convert 'sec' to 'struct timeval'
+#define TVMSEC(msec)              &(struct timeval){msec / 1000, (msec % 1000) * 1000} // convert 'msec' to 'struct timeval'
 
 #endif // !__GSRN_GSRND_H__
