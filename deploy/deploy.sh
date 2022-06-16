@@ -73,20 +73,19 @@ echo "GSocket: ${VER_GS}"
 hosts="gs1 gs2 gs3 gs4 gs5"
 [[ -n "$1" ]] && hosts="$@"
 
+g_port=64222
 
 for h in $hosts; do
-	port=6422
-	[[ "$h" =~ 'g16' ]] && port=22
+	[[ "$h" =~ 'g16' ]] && g_port=22
 
-	deploy_host "$port" "$h" || exit 254
+	deploy_host "$g_port" "$h" || exit 254
 done
 
 echo "Press Enter to restart gsrnd or Ctrl-C to quit."
 read
 for h in $hosts; do
-	port=6422
-	[[ "$h" =~ 'g16' ]] && port=22
-	restart_host "$port" "$h" || exit 254
+	[[ "$h" =~ 'g16' ]] && g_port=22
+	restart_host "$g_port" "$h" || exit 254
 done
 
 
