@@ -14,17 +14,17 @@ deploy_host()
 		echo "Updating gsocket-${VER_GS}..."
 		scp -P $port ../../gsocket/gsocket-${VER_GS}.tar.gz "gsnet@${host}:" 
 		ssh -p $port "gsnet@${host}" "tar xfz gsocket-${VER_GS}.tar.gz && \
+			{ [[ -h gsocket ]] && rm -f gsocket; true; } && \
 			ln -sf gsocket-${VER_GS} gsocket && \
 			(cd gsocket && ./configure --prefix=\$HOME/usr && make all install)"
-	}
+	} || exit 255
 
 	ssh -p $port "gsnet@${host}" "[[ \"${VER_RELAY}\" = \$(usr/bin/gsrnd -h 2>&1 | grep ^Vers | cut -f2 -d' ') ]] && exit 0" && { echo "gsocket-relay-${VER_RELAY} already installed. Skipping."; return; }
 	scp -P $port ../gsocket-relay-${VER_RELAY}.tar.gz "gsnet@${host}:"
 	ssh -p $port "gsnet@${host}" "tar xfz gsocket-relay-${VER_RELAY}.tar.gz && \
 		{ [[ -d \$HOME/usr ]] || mkdir \$HOME/usr; } && \
-		(cd gsocket && ./configure --prefix=\$HOME/usr && make all install) && \
-		[[ -f usr/bin/gsrnd ]] && { cp usr/bin/gsrnd usr/bin/gsrnd-\$(usr/bin/gsrnd -h 2>&1 | grep ^Vers | cut -f2 -d' ')_\$(date '+%s'); } && \
-		(cd gsocket-relay-${VER_RELAY} && ./configure --prefix=\$HOME/usr && make all install) && \
+		{ [[ -f usr/bin/gsrnd ]] && { cp usr/bin/gsrnd usr/bin/gsrnd-\$(usr/bin/gsrnd -h 2>&1 | grep ^Vers | cut -f2 -d' ')_\$(date '+%s'); }; true; } && \
+		(cd gsocket-relay-${VER_RELAY} && ln -s ../gsocket gsocket && ./configure --prefix=\$HOME/usr && make all install) && \
 		{ [[ \"${VER_RELAY}\" = \$(usr/bin/gsrnd -h 2>&1 | grep ^Vers | cut -f2 -d' ') ]] || { echo \"${host}: Cant execute gsrnd\"; exit 255; } } && \
 		exit 0
 	"

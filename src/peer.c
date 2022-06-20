@@ -137,7 +137,7 @@ pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t 
 			{
 				DEBUGF_R("BAD TOKEN\n");
 				char hextoken[GS_TOKEN_SIZE * 2 + 1];
-				GS_LOG_V("[%6u] %32s BAD AUTH TOKEN (%s, should be %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
+				GS_LOG_V("[%6u] %32s BAD AUTH TOKEN (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
 				return -1; // Bad Token
 			}
 			evtimer_del(pl_mgr->evt_linger);
@@ -603,6 +603,7 @@ PEER_free(struct _peer *p, int is_free_buddy)
 
 	XEVT_FREE(p->evt_shutdown_timeout);
 	XEVT_FREE(p->evt_tioc);
+	XEVT_FREE(p->evt_bad_auth_delay);
 	XBEV_FREE(p->bev);
 
 	// Unlink myself from my buddy

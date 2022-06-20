@@ -36,6 +36,7 @@ struct _peer_l_mgr
 	uint128_t addr;
 	struct event *evt_linger;    // Timeout to free gsocket-listen block (matching token)
 	struct event *evt_shortwait; // Delete waiting peers who are FL_PEER_IS_SHOTWAIT
+	uint64_t last_bad_auth_usec;
 	uint8_t token[GS_TOKEN_SIZE];
 	int flags;
 	struct _peer_l_root plr[MAX_LISTS_BY_ADDR];	
@@ -57,9 +58,9 @@ struct _peer
 
 	struct _peer_l_root *plr;
 	TAILQ_ENTRY(_peer) ll;        // linked entries.
-	// uint64_t delayed_free_usec;        // when this peer started to wait...
 
 	// struct event *evt_peer_shutdown;
+	struct event *evt_bad_auth_delay;
 	struct event *evt_tioc;
 	int tioc_count;
 	int tioc_delay_ms;

@@ -16,6 +16,11 @@
 // listening gsocket with different token (same gsocket addr).
 #define GSRN_TOKEN_LINGER           (7)
 #define GSRN_SHUTDOWN_IDLE_TIMEOUT  (10)
+// Delay BAD_AUTH error by 30 seconds if 2 or more BAD_AUTH within
+// 60 seconds happen. This happens when user starts 'gs-nc -l' multiple
+// times and using the same GS_SECRET.
+#define GSRN_BAD_AUTH_WINDOW        (60)
+#define GSRN_BAD_AUTH_DELAY         (30)
 
 #define TVSEC(sec)                &(struct timeval){sec, 0} // convert 'sec' to 'struct timeval'
 #define TVMSEC(msec)              &(struct timeval){msec / 1000, (msec % 1000) * 1000} // convert 'msec' to 'struct timeval'

@@ -37,6 +37,43 @@ cb_gsrn_protocol_error(struct evbuffer *eb, size_t len, void *arg)
 	PEER_goodbye(p);
 }
 
+static void
+cb_evt_bad_auth_delay(int fd_notusec, short event, void *arg)
+{
+	struct _peer *p = (struct _peer *)arg;
+
+	DEBUGF_W("Sending delayed BAD_AUTH\n");
+	GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
+	PEER_goodbye(p);
+}
+
+// Check if DISCONNECT/ERROR should be delayed (return 0) or immediately.
+// return -1 (immediately / error)
+// Called from gsrn_listen()
+static int
+gsrn_bad_auth_delay(struct _peer *p)
+{
+	struct _peer_l_mgr *pl_mgr = NULL;
+	pl_mgr = PEER_get_mgr(p->addr);
+	if (pl_mgr == NULL)
+		return -1;
+
+	uint64_t last_bad_auth_usec = pl_mgr->last_bad_auth_usec;
+	pl_mgr->last_bad_auth_usec = gopt.usec_now;
+	if (last_bad_auth_usec <= 0)
+		return -1; // First time we see BAD_AUTH. Disconnect immediately.
+	if (last_bad_auth_usec + GS_SEC_TO_USEC(GSRN_BAD_AUTH_WINDOW) < gopt.usec_now)
+		return -1; // No BAD_AUTH for a while. Disconnect immediately.
+
+	DEBUGF_W("Delaying BAD_AUTH (last: %0.03fsec ago)\n", (float)(gopt.usec_now - last_bad_auth_usec) / 1000 / 1000);
+	// HERE: Rapid LISTEN requests with BAD-AUTH.
+	// Delay the error and disconnect.
+	p->evt_bad_auth_delay = evtimer_new(gopt.evb, cb_evt_bad_auth_delay, p);
+	evtimer_add(p->evt_bad_auth_delay, TVSEC(GSRN_BAD_AUTH_DELAY));
+
+	return 0;
+}
+
 static int
 gsrn_listen(struct _peer *p, uint8_t *token)
 {
@@ -51,7 +88,13 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 	int ret;
 	ret = PEER_add(p, PEER_L_LISTENING, token);
 	if (ret != 0)
-		goto err;
+	{
+		// BAD AUTH TOKEN (another peer of same addr is already listening)
+		if (gsrn_bad_auth_delay(p) != 0)
+			goto err;
+
+		return 0; // Trigger cb_evt_bad_auth_delay()
+	}
 
 	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING, NULL);
 	if (buddy != NULL)
@@ -469,6 +512,7 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 		bufferevent_disable(bev, EV_READ);
 	}
 
+	gopt.usec_now = GS_usec();
 	// Dispatch protocol message
 	PKT_dispatch(&p->pkt, in);
 	// May have enabled EV_READ (if a gs-accept was received).
