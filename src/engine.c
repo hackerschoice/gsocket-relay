@@ -564,7 +564,7 @@ err:
 }
 
 void
-cb_accept(int ls, short evc, void *arg)
+cb_accept(int ls, short ev, void *arg)
 {
 	// struct event *ev = (struct event *)arg;
 	// BIO *bio = BIO_new(BIO_s_socket());
