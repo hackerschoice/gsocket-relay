@@ -378,19 +378,16 @@ print_prompt(void)
 static void
 cmd_help_list(char *opt, char *end)
 {
+	//  for i in 6a 6b 6c 6d 6e 71 74 75 76 77 78; do printf "0x$i \x$i \x1b(0\x$i\x1b(B\n"; done
 	printf(""
 "all            - list all connections\n"
 "server         - list listening servers\n"
 "client         - list connected clients\n"
-"  flags  HSXFLWAI\n"
-"         │││││││└─ Minor Version\n"
-"         ││││││└── Major Version\n"
-"         │││││└─── Client Waiting\n"
-"         ││││└──── Low Latency (interactive)\n"
-"         │││└───── Fast Connect\n"
-"         ││└────── Client Or Server\n"
-"         │└─────── SRP enabled\n"
-"         └──────── domain prefix\n"
+"Note:             HSXFLWAI\n"
+"    Domain prefix ┘││││││└─ Minor Version\n"
+"      SRP enabled ─┘││││└── Major Version\n"
+" Client or Server ──┘││└─── Client Waiting\n"
+"     Fast Connect ───┘└──── Low Latency (interactive)\n"
 "");
 
 	print_prompt();
@@ -505,7 +502,7 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 
 	if (msg.buddy_port != 0)
 	{
-		memcpy(&ip, &msg.buddy_ip, sizeof ip); // FIXME: WHy is this not aligned?
+		memcpy(&ip, &msg.buddy_ip, sizeof ip); // align
 		snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(ip), ntohs(msg.buddy_port));
 		printf(" - %-21s (%*s) %s [%s/s] \n", ipport, GS_SINCE_MAXSIZE - 1, idle, traffic, msg.bps);
 	} else {
@@ -514,16 +511,30 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 }
 
 static void
+printt(const char *prefix, uint64_t usec)
+{
+	char buf[64];
+	time_t t = time(NULL);
+	time_t sec = GS_USEC_TO_SEC(usec);
+	time_t msec = GS_USEC_TO_MSEC(usec);
+
+	t = t - sec;
+
+	char *cstr = asctime(gmtime(&t));
+	cstr[strcspn(cstr, "\r\n")] = 0;
+
+	printf("%s%s UTC; %s; %.03f sec\n", prefix, cstr, GS_format_since(buf, sizeof buf, sec), (float)msec / 1000);
+}
+
+static void
 cb_cli_stats_r(struct evbuffer *eb, size_t len, void *arg)
 {
 	struct _cli_stats_r msg;
-	char buf[128];
 
 	evbuffer_remove(eb, &msg, sizeof msg);
 
-	// GS_format_since(buf, sizeof buf, GS_USEC_TO_SEC(msg.uptime_usec));
-	printf("Uptime     : %s (%.03fsec)\n", GS_format_since(buf, sizeof buf, GS_USEC_TO_SEC(msg.uptime_usec)), (float)GS_USEC_TO_MSEC(msg.uptime_usec) / 1000);
-	printf("Period     : %s (%.03fsec)\n", GS_format_since(buf, sizeof buf, GS_USEC_TO_SEC(msg.since_reset_usec)), (float)GS_USEC_TO_MSEC(msg.since_reset_usec) / 1000);
+	printt("Uptime     : ", msg.uptime_usec);
+	printt("Period     : ", msg.since_reset_usec);
 	printf("GS-Listen  : %"PRIu64"\n", msg.n_gs_listen);
 	printf("GS-Bad Auth: %"PRIu64"\n", msg.n_bad_auth);
 	printf("GS-Connect : %"PRIu64"\n", msg.n_gs_connect);

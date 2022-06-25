@@ -6,6 +6,8 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 LimitNOFILE=infinity
+#LimitCORE=infinity
+#WorkingDirectory=/tmp
 Restart=always
 RestartSec=1
 User=gsnet
