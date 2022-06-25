@@ -1,27 +1,11 @@
 #! /bin/bash
 
 BASEDIR="$(cd "$(dirname "${0}")" || exit; pwd)"
-# Load the list of GSRN hosts if no arg is specified. File looks like this:
-# DOMAIN=thc.org
-# HOSTS+=("gs1.${DOMAIN}")
-# HOSTS+=("gs2.${DOMAIN}")
-# HOSTS+=("gs3.${DOMAIN}")
-# HOSTS+=("gs4.${DOMAIN}")
-# HOSTS+=("gs5.${DOMAIN}")
-[[ ${#@} -eq 0 ]] && source "${BASEDIR}/.gsrn_hosts" 
-
-# Otherwise use hosts from command line arguments.
-[[ -z $HOSTS ]] && HOSTS=(${@})
-[[ -z $HOSTS ]] && { echo -e "$(basename "${0}") [gsrn-hostname] ..."; exit 255; }
+source "${BASEDIR}/funcs"
 
 date_bin="date"
 command -v gdate >/dev/null && date_bin="gdate"
 unset GSOCKET_IP
-
-MIN()
-{
-	echo $(($1>$2 ? $2 : $1))
-}
 
 gsrn_ping()
 {

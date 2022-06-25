@@ -48,12 +48,6 @@ struct _gopt
 };
 
 
-// Client globals
-struct _gcli
-{
-	struct event ev_stdin;
-};
-
 // Server (daemon) globals
 struct _gd
 {

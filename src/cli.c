@@ -42,10 +42,11 @@ CLI_write(struct _cli *c, struct evbuffer *eb)
 	bufferevent_write_buffer(c->bev, eb);
 }
 
+// Send a variable length message
 void
 CLI_payload(struct _cli *c, uint8_t type, uint16_t payload_len, const void *payload)
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_tlv hdr;
 
 	hdr.type = type;
 	hdr.len = payload==NULL?0:htons(payload_len);

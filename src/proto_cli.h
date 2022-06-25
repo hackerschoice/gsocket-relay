@@ -3,7 +3,7 @@
 
 #include "peer.h"
 
-struct _cli_hdr
+struct _cli_hdr_tlv
 {
 	// As per packet.h
 	uint8_t type;      // GSRN_CLI_TYPE_*
@@ -11,28 +11,27 @@ struct _cli_hdr
 	char payload[0];
 } __attribute__((__packed__));
 
-// struct _cli_req
-// {
-// 	struct _cli_hdr hdr;
-// 	char opt[0];
-// } __attribute__((__packed__));
+struct _cli_hdr_fixed
+{
+	uint8_t type;      // GSRN_CLI_TYPE_*
+	char payload[0];
+} __attribute__((__packed__));
 
 struct _cli_msg
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_tlv hdr;
 	char msg[0];
 } __attribute__((__packed__));
 
 struct _cli_log
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_tlv hdr;
 	char msg[0];
 } __attribute__((__packed__));
 
-
 struct _cli_shutdown
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint8_t opcode;
 	uint8_t reserved[3];
 	uint32_t timer_sec;
@@ -40,14 +39,14 @@ struct _cli_shutdown
 
 struct _cli_kill
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint32_t peer_id;
 	uint128_t addr;
 } __attribute__((__packed__));
 
 struct _cli_list
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint32_t peer_id;
 	uint128_t addr;
 	uint8_t opcode;
@@ -57,7 +56,7 @@ struct _cli_list
 
 struct _cli_stop
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint32_t peer_id;
 	uint128_t addr;
 	uint8_t opcode;
@@ -66,7 +65,7 @@ struct _cli_stop
 
 struct _cli_set
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint32_t peer_id;
 	uint128_t addr;
 	uint8_t opcode;
@@ -83,7 +82,7 @@ struct _cli_set
 
 struct _cli_stats
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint8_t opcode;
 	uint8_t flags;
 } __attribute__((__packed__));
@@ -105,7 +104,7 @@ struct _flagstr
 // 'list' response
 struct _cli_list_r
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint8_t con_type;  // TCP, SSL or CNC
 	uint16_t port;
 
@@ -132,17 +131,21 @@ struct _cli_list_r
 // 'stats' response
 struct _cli_stats_r
 {
-	struct _cli_hdr hdr;
+	struct _cli_hdr_fixed hdr;
 	uint64_t uptime_usec;            // GSRND uptime
 	uint64_t since_reset_usec;       // Since last stats reset
 	uint64_t n_gs_connect;
 	uint64_t n_gs_listen;
 	uint64_t n_bad_auth;
 	uint64_t n_gs_refused;
+
+	uint32_t n_peers_total;
+	uint32_t n_peers_listening;
+	uint32_t n_peers_connected;
 } __attribute__((__packed__));
 
-#define GSRN_CLI_HDR_SIZE             (sizeof (struct _cli_hdr))
-#define GSRN_CLI_PAYLOAD_SIZE(xmsg)   (sizeof xmsg - GSRN_CLI_HDR_SIZE)
+#define GSRN_CLI_HDR_TLV_SIZE         (sizeof (struct _cli_hdr_tlv))
+#define GSRN_CLI_PAYLOAD_SIZE(xmsg)   (sizeof xmsg - GSRN_CLI_HDR_TLV_SIZE)
 
 #define GSRN_FL_CLI_LIST_START        (0x01)
 

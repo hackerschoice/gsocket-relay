@@ -35,7 +35,7 @@ struct _peer_l_mgr
 	int n_entries;
 	uint128_t addr;
 	struct event *evt_linger;    // Timeout to free gsocket-listen block (matching token)
-	struct event *evt_shortwait; // Delete waiting peers who are FL_PEER_IS_SHOTWAIT
+	struct event *evt_shortwait; // Delete waiting peers who are FL_PEER_IS_SHORTWAIT
 	uint64_t last_bad_auth_usec;
 	uint8_t token[GS_TOKEN_SIZE];
 	int flags;

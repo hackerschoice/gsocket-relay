@@ -5,11 +5,12 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+LimitNOFILE=infinity
 Restart=always
 RestartSec=1
 User=gsnet
 Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
-ExecStart=/home/gsnet/usr/bin/gsrnd -P0 -p7350 -vv
+ExecStart=/home/gsnet/usr/bin/gsrnd -P0 -p7350 
 StandardOutput=journal
 
 [Install]

@@ -4,35 +4,7 @@
 INTERVAL=60 # Check all servers every n seconds
 
 BASEDIR="$(cd "$(dirname "${0}")" || exit; pwd)"
-
-# Load the list of GSRN hosts if no arg is specified. File looks like this:
-# DOMAIN=thc.org
-# HOSTS+=("gs1.${DOMAIN}")
-# HOSTS+=("gs2.${DOMAIN}")
-# HOSTS+=("gs3.${DOMAIN}")
-# HOSTS+=("gs4.${DOMAIN}")
-# HOSTS+=("gs5.${DOMAIN}")
-[[ ${#@} -eq 0 ]] && source "${BASEDIR}/.gsrn_hosts" 
-
-# Otherwise use hosts from command line arguments.
-[[ -z $HOSTS ]] && HOSTS=(${@})
-[[ -z $HOSTS ]] && { echo -e "heartbeat.sh [gsrn-hostname] ..."; exit 255; }
-
-ERREXIT()
-{
-	local code
-	code="$1"
-
-	[[ $? -ne 0 ]] && code="$?"
-	[[ -z $code ]] && code=99
-
-	shift 1
-	[[ -n $1 ]] && echo -e >&2 "ERROR: $*"
-
-	exit "$code"
-}
-
-XMD5() { md5sum "${1}" 2>/dev/null | cut -f1 -d' '; }
+source "${BASEDIR}/funcs"
 
 command -v gs-netcat >/dev/null || ERREXIT 254 "Not found: gs-netcat"
 command -v md5sum >/dev/null || ERREXIT 254 "Not found: md5sum"

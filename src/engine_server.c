@@ -162,7 +162,7 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	if (gpflags & GS_FL_PROTO_CLIENT_OR_SERVER)
 		msg.fl.x_client_or_server = 'X';
 	if (gpflags & GS_FL_PROTO_FAST_CONNECT)
-		msg.fl.low_latency = 'F';
+		msg.fl.fast_connect = 'F';
 	if (gpflags & GS_FL_PROTO_LOW_LATENCY)
 		msg.fl.low_latency = 'L';
 
@@ -295,6 +295,20 @@ cb_cli_stats(struct evbuffer *eb, size_t len, void *arg)
 	r.n_bad_auth = gstats.n_bad_auth;
 	r.n_gs_refused = gstats.n_gs_refused;
 
+	int i;
+	for (i = 0; i < MAX_LISTS_BY_ADDR; i++)
+	{
+		if (i == PEER_L_CONNECTED)
+			r.n_peers_total += gopt.t_peers.n_entries[i] / 2;
+		else
+			r.n_peers_total += gopt.t_peers.n_entries[i];
+	}
+
+	// CONNECTED holds 1 server and 1 client but for the purpose of counting
+	// we treat this as '1 connection'.
+	r.n_peers_connected = gopt.t_peers.n_entries[PEER_L_CONNECTED] / 2;
+	r.n_peers_listening = gopt.t_peers.n_entries[PEER_L_LISTENING];
+
 	if (msg.opcode == GSRN_CLI_OP_STATS_RESET)
 	{
 		gsrn_stats_reset();
@@ -394,11 +408,11 @@ cb_accept_cli(int ls, short ev, void *arg)
 		goto err;
 
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, sizeof (struct _cli_list), cb_cli_list, c);
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_KILL, sizeof (struct _cli_kill), cb_cli_kill, c); // Fixed length message
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STOP, sizeof (struct _cli_stop), cb_cli_stop, c); // Fixed length message
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SET, sizeof (struct _cli_set), cb_cli_set, c); // Fixed length message
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SHUTDOWN, sizeof (struct _cli_shutdown), cb_cli_shutdown, c); // Fixed length message
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STATS, sizeof (struct _cli_stats), cb_cli_stats, c); // Fixed length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_KILL, sizeof (struct _cli_kill), cb_cli_kill, c);
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STOP, sizeof (struct _cli_stop), cb_cli_stop, c);
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SET, sizeof (struct _cli_set), cb_cli_set, c);
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SHUTDOWN, sizeof (struct _cli_shutdown), cb_cli_shutdown, c);
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STATS, sizeof (struct _cli_stats), cb_cli_stats, c);
 	bufferevent_enable(c->bev, EV_READ);
 
 	return;
@@ -437,13 +451,9 @@ init_engine(void)
 		ERREXIT("getrlimit()=%s\n", strerror(errno));
 	if (r->rlim_max <= 1024)
 		GS_LOG("WARNING: Max fd limit is %lu", r->rlim_max);
-	if (r->rlim_cur < r->rlim_max - GSRN_FD_RESERVE)
-	{
-		GS_LOG("WARNING: Raising file descriptor limit from %lu to %lu", r->rlim_cur, r->rlim_max - GSRN_FD_RESERVE);
-		if (fd_limit_limited() != 0)
-			ERREXIT("setrlimit()=%s\n", strerror(errno));;
-	}
-
+	GS_LOG("File descriptor limit set to %lu+%d (was %lu)", r->rlim_max - GSRN_FD_RESERVE, GSRN_FD_RESERVE, r->rlim_cur);
+	if (fd_limit_limited() != 0)
+		ERREXIT("setrlimit()=%s\n", strerror(errno));;
 
 	// Start listening
 	add_listen_sock(INADDR_ANY, gopt.port, &gopt.ev_listen, cb_accept);

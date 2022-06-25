@@ -8,7 +8,6 @@
 
 struct _gopt gopt;
 struct _gd gd;
-struct _gcli gcli;
 #ifdef DEBUG
 struct _g_debug_ctx g_dbg_ctx;
 #endif

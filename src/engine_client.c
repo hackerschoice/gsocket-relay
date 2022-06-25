@@ -10,6 +10,8 @@
 #define PROMPT    "gsrn> "
 static struct evbuffer *g_evb;
 struct _cli *g_cli;
+static int g_is_tty;
+static struct event *g_ev_stdin;
 
 typedef void (*dp_func_t)(char *line, char *end);
 
@@ -367,7 +369,9 @@ cmd_exit(char *opt_notused, char *end)
 static void
 print_prompt(void)
 {
-	printf(D_RED(PROMPT));
+	if (g_is_tty)
+		printf(D_RED(PROMPT));
+
 	fflush(stdout);
 }
 
@@ -378,6 +382,15 @@ cmd_help_list(char *opt, char *end)
 "all            - list all connections\n"
 "server         - list listening servers\n"
 "client         - list connected clients\n"
+"  flags  HSXFLWAI\n"
+"         │││││││└─ Minor Version\n"
+"         ││││││└── Major Version\n"
+"         │││││└─── Client Waiting\n"
+"         ││││└──── Low Latency (interactive)\n"
+"         │││└───── Fast Connect\n"
+"         ││└────── Client Or Server\n"
+"         │└─────── SRP enabled\n"
+"         └──────── domain prefix\n"
 "");
 
 	print_prompt();
@@ -408,7 +421,7 @@ cmd_help(char *opt, char *end)
 "stop listen tcp   - Stop accepting GSRN connections (TCP & SSL)\n"
 "kill <id/addr>    - Disconnect peer by id or address\n"
 "set               - Toggle settings\n"
-"shutdown [timer]  - Disconnect GS-listeners & quit when last GS-Connection disconnects\n"
+"shutdown [timer]  - Disconnect GS-listeners\n"
 "quit              - Quit\n"
 "");
 
@@ -424,7 +437,11 @@ cb_read_stdin(int fd, short what, void *arg)
 
 	ret = evbuffer_read(g_evb, fd, -1 /*all available*/);
 	if (ret <= 0)
-		ERREXIT("read(): %s\n", strerror(errno));
+	{
+		if (!g_is_tty)
+			exit(0);
+		ERREXIT("read(%d)=%d: %s\n", fd, ret, strerror(errno));
+	}
 
 	while (1)
 	{
@@ -511,18 +528,22 @@ cb_cli_stats_r(struct evbuffer *eb, size_t len, void *arg)
 	printf("GS-Bad Auth: %"PRIu64"\n", msg.n_bad_auth);
 	printf("GS-Connect : %"PRIu64"\n", msg.n_gs_connect);
 	printf("GS-Refused : %"PRIu64"\n", msg.n_gs_refused);
+	printf("Listening  : %"PRIu32"\n", msg.n_peers_listening);
+	printf("Connected  : %"PRIu32"\n", msg.n_peers_connected);
+	printf("Waiting    : %"PRId32"\n", msg.n_peers_total - (msg.n_peers_listening + msg.n_peers_connected));
 
 	print_prompt();
 }
 
+// Variable legnth
 static void
 cb_cli_msg(struct evbuffer *eb, size_t len, void *arg)
 {
 	struct _cli_msg msg;
 	char buf[len - sizeof msg + 1];
 
-	evbuffer_remove(eb, &msg, GSRN_CLI_HDR_SIZE);
-	evbuffer_remove(eb, buf, len - GSRN_CLI_HDR_SIZE);
+	evbuffer_remove(eb, &msg, GSRN_CLI_HDR_TLV_SIZE);
+	evbuffer_remove(eb, buf, len - GSRN_CLI_HDR_TLV_SIZE);
 	buf[sizeof buf - 1] = '\0';
 
 	// An empty string triggers just the prompt but no output or \n
@@ -541,6 +562,7 @@ init_engine(void)
 	addr.sin_addr.s_addr = htonl(gopt.ip_cli);
 	addr.sin_port = htons(gopt.port_cli);
 
+	g_is_tty = isatty(STDIN_FILENO);
 	g_cli = CLI_new(-1, NULL, 0 /*is_server*/);
 	bufferevent_socket_connect(g_cli->bev, (struct sockaddr *)&addr, sizeof addr);
 
@@ -550,8 +572,8 @@ init_engine(void)
 	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_STATS_RESPONSE, sizeof (struct _cli_stats_r), cb_cli_stats_r, g_cli);
 
 	g_evb = evbuffer_new();
-	event_assign(&gcli.ev_stdin, gopt.evb, 0 /*stdin*/, EV_READ | EV_PERSIST, cb_read_stdin, NULL);
-	event_add(&gcli.ev_stdin, NULL);
+	g_ev_stdin = event_new(gopt.evb, STDIN_FILENO, EV_READ | EV_PERSIST, cb_read_stdin, NULL);
+	event_add(g_ev_stdin, NULL);
 
 	print_prompt();
 }
