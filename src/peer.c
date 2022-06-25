@@ -135,7 +135,6 @@ pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t 
 			// HERE: Token is set. Check token from peer.
 			if ((token == NULL) || (memcmp(pl_mgr->token, token, sizeof pl_mgr->token) != 0))
 			{
-				DEBUGF_R("BAD TOKEN\n");
 				char hextoken[GS_TOKEN_SIZE * 2 + 1];
 				GS_LOG_V("[%6u] %32s BAD AUTH TOKEN (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
 				return -1; // Bad Token
@@ -391,6 +390,15 @@ cb_evt_linger(int fd_notused, short event, void *arg)
 	}
 }
 
+void
+PEER_conn_refused(struct _peer *p)
+{
+	gstats.n_gs_refused += 1;
+	GS_LOG_V("[%6u] %32s CON-REFUSED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+	GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
+	PEER_goodbye(p);
+}
+
 static void
 cb_evt_shortwait(int fd_notused, short event, void *arg)
 {
@@ -411,8 +419,7 @@ cb_evt_shortwait(int fd_notused, short event, void *arg)
 		if (!(PEER_IS_SHORTWAIT(p)))
 			continue;
 		DEBUGF_W("  [%u] Disconnecting\n", p->id);
-		GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
-		PEER_goodbye(p);	
+		PEER_conn_refused(p);
 	}
 }
 
@@ -444,6 +451,7 @@ done:
 static void
 peer_sys_shutdown(struct _peer *p)
 {
+	DEBUGF("sys.shutdown(%d, SHUT_WR)\n", p->fd);
 	shutdown(p->fd, SHUT_WR);
 	p->flags |= FL_PEER_IS_SHUT_WR_SENT;
 	XEVT_FREE(p->evt_shutdown_timeout);
@@ -461,8 +469,27 @@ tioc(struct _peer *p)
 		return -1;
 
 	p->tioc_count += 1;
-
 	DEBUGF("[%6u] %c fd=%d count=%6d tioc=%d eof=%d\n", p->id, IS_CS(p), p->fd, p->tioc_count, value, PEER_IS_EOF_RECEIVED(p)?1:0);
+
+	// No data in kernel's output buffer.
+	if (value == 0)
+		return 0;
+
+	// Linux (tested on localhost):
+	// 1. Peer app exits & sends TCP-FIN to gsrnd.
+	// 2. GSRND still has data for peer in TIOC-OUT-Q
+	// 3. GSRND sends data to Peer.
+	// 4. Peer sends TCP-RST to GSRND.
+	// => GSRND wont get this error because Q never empties and never calls read()
+	// on the socket.  
+	// The only solution is to poll on getsockopt() to see if an error occured.
+	socklen_t len = sizeof (value);
+	ret = getsockopt (p->fd, SOL_SOCKET, SO_ERROR, &value, &len);
+	if ((ret != 0) || (value == EPIPE))
+	{
+		DEBUGF_R("[%6u] %c fd=%d getsockopt()=%d err=%d (%s)\n", p->id, IS_CS(p), p->fd, ret, value, strerror(value));
+		return -1;
+	}
 
 	return value;
 }

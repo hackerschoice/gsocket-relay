@@ -22,7 +22,22 @@
 #define GSRN_BAD_AUTH_WINDOW        (60)
 #define GSRN_BAD_AUTH_DELAY         (30)
 
+// Keep at least 10 FD's as reseve so if we run out of FD's that
+// CLI can still connect
+#define GSRN_FD_RESERVE             (10)
+
 #define TVSEC(sec)                &(struct timeval){sec, 0} // convert 'sec' to 'struct timeval'
 #define TVMSEC(msec)              &(struct timeval){msec / 1000, (msec % 1000) * 1000} // convert 'msec' to 'struct timeval'
+
+
+struct _gstats
+{
+	uint64_t start_usec;   // TS when GSRN started
+	uint64_t reset_usec;   // TS when stat got reset last.
+	uint64_t n_gs_connect; // GS-CONNECT count
+	uint64_t n_gs_listen;  // GS-LISTEN count
+	uint64_t n_bad_auth;   // BAD-AUTH count
+	uint64_t n_gs_refused; // GS Buddy not listening
+};
 
 #endif // !__GSRN_GSRND_H__

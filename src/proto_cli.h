@@ -5,16 +5,17 @@
 
 struct _cli_hdr
 {
-	uint8_t type;
-	uint16_t len;
+	// As per packet.h
+	uint8_t type;      // GSRN_CLI_TYPE_*
+	uint16_t len;      // Only used for variable length
 	char payload[0];
 } __attribute__((__packed__));
 
-struct _cli_req
-{
-	struct _cli_hdr hdr;
-	char opt[0];
-} __attribute__((__packed__));
+// struct _cli_req
+// {
+// 	struct _cli_hdr hdr;
+// 	char opt[0];
+// } __attribute__((__packed__));
 
 struct _cli_msg
 {
@@ -28,12 +29,31 @@ struct _cli_log
 	char msg[0];
 } __attribute__((__packed__));
 
+
+struct _cli_shutdown
+{
+	struct _cli_hdr hdr;
+	uint8_t opcode;
+	uint8_t reserved[3];
+	uint32_t timer_sec;
+} __attribute__((__packed__));
+
 struct _cli_kill
 {
 	struct _cli_hdr hdr;
 	uint32_t peer_id;
 	uint128_t addr;
 } __attribute__((__packed__));
+
+struct _cli_list
+{
+	struct _cli_hdr hdr;
+	uint32_t peer_id;
+	uint128_t addr;
+	uint8_t opcode;
+} __attribute__((__packed__));
+#define GSRN_CLI_OP_LIST_ESTAB           (0x01)
+#define GSRN_CLI_OP_LIST_LISTEN          (0x02)
 
 struct _cli_stop
 {
@@ -51,13 +71,23 @@ struct _cli_set
 	uint128_t addr;
 	uint8_t opcode;
 	uint8_t opvalue1;
-	uint8_t opvalue2;
+	uint8_t opvalue2; // NOT USED
 	uint8_t version_major;
 	uint8_t version_minor;
+	uint16_t port;
 } __attribute__((__packed__));
-
 #define GSRN_CLI_OP_SET_PROTO          (0x01)
 #define GSRN_CLI_OP_SET_LOG_IP         (0x02)
+#define GSRN_CLI_OP_SET_PORT_CLI       (0x03)
+#define GSRN_CLI_OP_SET_LOG_VERBOSITY  (0x04)
+
+struct _cli_stats
+{
+	struct _cli_hdr hdr;
+	uint8_t opcode;
+	uint8_t flags;
+} __attribute__((__packed__));
+#define GSRN_CLI_OP_STATS_RESET        (0x01)
 
 ///////////// CLI responses
 
@@ -75,7 +105,7 @@ struct _flagstr
 // 'list' response
 struct _cli_list_r
 {
-	uint8_t type;
+	struct _cli_hdr hdr;
 	uint8_t con_type;  // TCP, SSL or CNC
 	uint16_t port;
 
@@ -99,18 +129,34 @@ struct _cli_list_r
 	};
 } __attribute__((__packed__));
 
+// 'stats' response
+struct _cli_stats_r
+{
+	struct _cli_hdr hdr;
+	uint64_t uptime_usec;            // GSRND uptime
+	uint64_t since_reset_usec;       // Since last stats reset
+	uint64_t n_gs_connect;
+	uint64_t n_gs_listen;
+	uint64_t n_bad_auth;
+	uint64_t n_gs_refused;
+} __attribute__((__packed__));
+
 #define GSRN_CLI_HDR_SIZE             (sizeof (struct _cli_hdr))
 #define GSRN_CLI_PAYLOAD_SIZE(xmsg)   (sizeof xmsg - GSRN_CLI_HDR_SIZE)
 
 #define GSRN_FL_CLI_LIST_START        (0x01)
 
+///////////// CLI TYPE definitions
 #define GSRN_CLI_TYPE_LIST_RESPONSE   (0x01)  // s2c - response (to list request)
 #define GSRN_CLI_TYPE_LOG             (0x02)  // s2c - log message
 #define GSRN_CLI_TYPE_MSG             (0x04)  // s2c - message (to display)
+#define GSRN_CLI_TYPE_STATS_RESPONSE  (0x09)  // s2c - stats response
 
 #define GSRN_CLI_TYPE_LIST            (0x01)  // c2s - list all connected clients
 #define GSRN_CLI_TYPE_KILL            (0x03)  // c2s - Kill a session (by ID or ADDR)
 #define GSRN_CLI_TYPE_STOP            (0x05)  // c2s - stop listening tcp/gsocket
 #define GSRN_CLI_TYPE_SET             (0x06)  // c2s - set a variable (config)
+#define GSRN_CLI_TYPE_SHUTDOWN        (0x07)  // c2s - Shut all GS-Listeners 
+#define GSRN_CLI_TYPE_STATS           (0x08)  // c2s - Request stats
 
 #endif // !__GSRN_PROTO_CLI_H__

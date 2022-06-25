@@ -45,11 +45,11 @@ CLI_write(struct _cli *c, struct evbuffer *eb)
 void
 CLI_payload(struct _cli *c, uint8_t type, uint16_t payload_len, const void *payload)
 {
-	uint16_t nlen;
+	struct _cli_hdr hdr;
 
-	evbuffer_add(c->eb, &type, sizeof type);
-	nlen = htons(payload_len);
-	evbuffer_add(c->eb, &nlen, sizeof nlen);
+	hdr.type = type;
+	hdr.len = payload==NULL?0:htons(payload_len);
+	evbuffer_add(c->eb, &hdr, sizeof hdr);
 	if (payload != NULL)
 		evbuffer_add(c->eb, payload, payload_len);
 

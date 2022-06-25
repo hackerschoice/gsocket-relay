@@ -79,7 +79,7 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 {
 	// Adjust timeout
 	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
-	GSRN_change_state(p, GS_PKT_TYPE_LISTEN);
+	GSRN_change_state(p, GSRN_STATE_LISTEN);
 
 	// Check if addr is already listening
 	// The binary tree contains a double-linked list of peers.
@@ -90,10 +90,13 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 	if (ret != 0)
 	{
 		// BAD AUTH TOKEN (another peer of same addr is already listening)
-		if (gsrn_bad_auth_delay(p) != 0)
-			goto err;
+		gstats.n_bad_auth += 1;
+		GSRN_change_state(p, GSRN_STATE_FINISHED);
+		if (gsrn_bad_auth_delay(p) == 0)
+			return 0; // Trigger cb_evt_bad_auth_delay()
 
-		return 0; // Trigger cb_evt_bad_auth_delay()
+		GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
+		return -1;
 	}
 
 	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING, NULL);
@@ -103,11 +106,8 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 		buddy_up(p /*server*/   , buddy /*client*/);
 	}
 
+	gstats.n_gs_listen += 1;
 	return 0;
-err:
-	GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
-
-	return -1;
 }
 
 // Set PEER information from _gs_listen/_gs_connect message
@@ -151,10 +151,10 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 	if (gsrn_listen(p, msg.token) != 0)
 		goto err;
 
+	// HERE: Can be SUCCESS or delayed BAD-AUTH.
 	return;
 err:
 	PEER_goodbye(p); 
-	return;
 }
 
 static void
@@ -188,6 +188,8 @@ buddy_up(struct _peer *server, struct _peer *client)
 	DEBUGF_G("%c Client-%d fd=%d bev=%p\n", IS_CS(client), client->id, bufferevent_getfd(client->bev), client->bev);
 	client->bps_last_usec = client->state_usec;
 	server->bps_last_usec = server->state_usec;
+
+	gstats.n_gs_connect += 1;
 }
 
 void
@@ -229,16 +231,14 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		if (!(msg.flags & GS_FL_PROTO_WAIT)) // FALSE
 		{
 			// Check if a listening server was recently available and
-			// let this client wait for a big with the hope of server to
+			// let this client wait for a bit with the hope of server to
 			// open another listening connection.
 			if ((bmgr != NULL) && (evtimer_pending(bmgr->evt_shortwait, NULL)))
 			{
 				p->flags |= FL_PEER_IS_SHORTWAIT;
 			} else {
-				GS_LOG_V("[%6u] %32s CON-REFUSED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
-
-				GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
-				goto err;
+				PEER_conn_refused(p);
+				return;
 			}
 		}
 
@@ -351,6 +351,8 @@ cb_shutdown_complete(void *arg)
 	struct _peer *p = (struct _peer *)arg;
 	struct _peer *buddy = p->buddy;
 
+	DEBUGF("[%6u] %c SHUTDOWN-COMPLETE (WR_SENT(buddy)=%s)\n", p->id, IS_CS(p), buddy==NULL?"NULL":PEER_IS_SHUT_WR_SENT(buddy)?"true":"false");
+
 	if (buddy == NULL)
 	{
 		PEER_free(p, 0);
@@ -406,6 +408,7 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 	{
 		if (PEER_IS_EOF_RECEIVED(p))
 		{
+			DEBUGF_R("EVENT_EOF received 2nd time!\n");
 			// FIXME: Odd, EV_READ gets disabled (see below) but libevent invokes this
 			// twice every once in a while...
 			// PEER_free(p, 0); // pointer may have gotten freed already. 
@@ -533,8 +536,18 @@ accept_ssl(int ls, SSL *ssl)
 	sox = fd_net_accept(ls);
 	if (sox < 0)
 	{
-		// FIXME: Log this failure.
-		goto err;
+		GS_LOG_V("[%6u] ERROR: accept(%d)=%s", ls, strerror(errno));
+		// Likely ran out of FD's. We should not exit
+		// but instead increase FD limit, accept fd, disconnect FD
+		// and the set FD limit again.
+		fd_limit_unlimited();
+		sox = fd_net_accept(ls);
+		fd_limit_limited();
+
+		// Catch-all total fuckup: wait...
+		if (sox < 0)
+			usleep(100 * 1000);
+		goto err; // Will close() the accepted socket.
 	}
 
 	// Create peer
@@ -545,14 +558,15 @@ accept_ssl(int ls, SSL *ssl)
 
 	return 0;
 err:
-	DEBUGF_R("error\n");
+	DEBUGF_R("ERROR %s ls=%d, sox=%d\n", strerror(errno), ls, sox);
 	XCLOSE(sox);
 	return -1;
 }
 
 void
-cb_accept(int ls, short ev, void *arg)
+cb_accept(int ls, short evc, void *arg)
 {
+	// struct event *ev = (struct event *)arg;
 	// BIO *bio = BIO_new(BIO_s_socket());
 
 	if (accept_ssl(ls, NULL) != 0)

@@ -164,6 +164,7 @@
 extern struct _gopt gopt; // declared in utils.c
 extern struct _gd gd;
 extern struct _gcli gcli;
+extern struct _gstats gstats; // declared in engine_server.c
 
 #define xfprintf(fp, a...) do {if (fp != NULL) { fprintf(fp, a); fflush(fp); } } while (0)
 
@@ -278,7 +279,7 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 #endif
 
 #define XCLOSE(fd)      do { \
-        if (fd < 0) { DEBUGF_R("*** WARNING *** Closing BAD fd\n"); exit(255); break; } \
+        if (fd < 0) { DEBUGF_R("*** WARNING *** Closing BAD fd\n"); break; } \
         DEBUGF_W("Closing fd = %d\n", fd); \
         close(fd); \
         fd = -1; \

@@ -23,5 +23,8 @@ const char *gs_log_ipport2str_r(char *dst, size_t dsz, uint32_t ip, uint16_t por
 const char *gs_log_ipport2str(uint32_t ip, uint16_t port);
 const char *gs_log_in_addr2str_r(char *dst, size_t dsz, struct sockaddr_in *addr_in);
 const char *gs_log_in_addr2str(struct sockaddr_in *addr_in);
+int fd_limit_init(void);
+int fd_limit_unlimited(void);
+int fd_limit_limited(void);
 
 #endif // !__GSRN_UTILS_H__

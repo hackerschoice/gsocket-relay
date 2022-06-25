@@ -114,6 +114,7 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 // Return S, C or - for Server, Client or Unknown (used by DEBUGF)
 #define IS_CS(p)   (p)->flags & FL_PEER_IS_SERVER?'S':(p)->flags & FL_PEER_IS_CLIENT?'C':'#'
 
+void PEER_conn_refused(struct _peer *p);
 void PEER_goodbye(struct _peer *p);
 int PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token);
 void PEER_free(struct _peer *p, int is_free_buddy);

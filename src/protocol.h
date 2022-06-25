@@ -16,6 +16,7 @@ void GSRN_change_state(struct _peer *p, uint8_t state);
 #define GSRN_STATE_CONNECT     (0x02)
 #define GSRN_STATE_BUDDY_UP    (0x03)
 #define GSRN_STATE_ACCEPT      (0x04)
+#define GSRN_STATE_FINISHED    (0x05)
 
 
 #endif // !__GRSRN_PROTOCOL_H__

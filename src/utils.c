@@ -1,5 +1,6 @@
 
 #include "common.h"
+#include "gsrnd.h"
 #include "utils.h"
 #include "net.h"
 #include "engine.h"
@@ -56,7 +57,6 @@ init_defaults(prg_t prg)
 	gopt.log_fp = stderr;
 	gopt.ip_cli = ntohl(inet_addr("127.0.0.1"));
 	gopt.port_cli = CLI_DEFAULT_PORT;
-	// gopt.port_ssl = CLI_DEFAULT_PORT_SSL;
 
 	// Must ignore SIGPIPE. Epoll may signal that socket is ready for wiriting
 	// but gets closed by remote before calling write().
@@ -88,7 +88,7 @@ add_listen_sock(uint32_t ip, int port, struct event **evptr, event_callback_fn c
 		return;
 	}
 
-	*evptr = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, NULL);
+	*evptr = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, evptr);
 	event_add(*evptr, NULL);
 }
 
@@ -155,6 +155,40 @@ init_vars(void)
 	// }
 }
 
+static int is_fdlim_init;
+
+int
+fd_limit_init(void)
+{
+	if (is_fdlim_init != 0)
+		return 0;
+
+	is_fdlim_init = 1;
+	return getrlimit(RLIMIT_NOFILE, &gopt.rlim_fd);
+}
+
+int
+fd_limit_unlimited()
+{
+	struct rlimit *r = &gopt.rlim_fd;
+
+	fd_limit_init();
+
+	r->rlim_cur = r->rlim_max;
+	return setrlimit(RLIMIT_NOFILE, r);
+}
+
+int
+fd_limit_limited()
+{
+	struct rlimit *r = &gopt.rlim_fd;
+
+	fd_limit_init();
+
+	r->rlim_cur = r->rlim_max - GSRN_FD_RESERVE;
+	return setrlimit(RLIMIT_NOFILE, r);
+}
+
 static void
 usage(char *err)
 {
@@ -164,13 +198,14 @@ usage(char *err)
 	fprintf(stderr, "Version %s\n"
 " -p <port>     TCP listening port [default=%d]\n"
 " -P <port>     SSL listening port. Use 0 to disable SSL support [default=%d]\n"
+" -m <port>     TCP port for cli [default=%d]\n"
 " -C            Listen for cnc connections [default=no]\n"
 " -c <port>     TCP port of cnc [default=%d]\n"
 " -d <IP>       Destination IP of CNC server [default=none]\n"
 " -L <file>     Logfile [default=stderr]\n"
 " -v            Verbosity level\n"
 " -a            Log IP addresses [disabled by default]\n"
-"", VERSION, GSRN_DEFAULT_PORT, GSRN_DEFAULT_PORT_SSL, GSRN_DEFAULT_PORT_CON);
+"", VERSION, GSRN_DEFAULT_PORT, GSRN_DEFAULT_PORT_SSL, CLI_DEFAULT_PORT, GSRN_DEFAULT_PORT_CON);
 
 	if (err)
 		exit(255);
@@ -184,7 +219,7 @@ do_getopt(int argc, char *argv[])
 	int c;
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "L:p:P:c:d:hva")) != -1)
+	while ((c = getopt(argc, argv, "L:p:P:c:d:m:hva")) != -1)
 	{
 		switch (c)
 		{
@@ -199,6 +234,9 @@ do_getopt(int argc, char *argv[])
 				break;
 			case 'P':
 				gopt.port_ssl = atoi(optarg);
+				break;
+			case 'm':
+				gopt.port_cli = atoi(optarg);
 				break;
 			case 'C':
 				gopt.is_concentrator = 1;

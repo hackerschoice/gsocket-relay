@@ -1,5 +1,6 @@
 // Only linked against gsrnd
 #include "common.h"
+#include "gsrnd.h"
 #include "utils.h"
 #include "cli.h"
 #include "net.h"
@@ -7,6 +8,24 @@
 #include "engine_cli.h"
 #include "gopt.h"
 
+struct _gstats gstats;
+
+struct _cli_list_param
+{
+	int first_call;
+	uint8_t opcode;
+};
+
+struct _cli_shutdown_param
+{
+	uint32_t timer_sec;
+	uint32_t n_shutdown;
+	uint32_t n_notlistening;
+};
+
+static void cb_accept_cli(int ls, short ev, void *arg);
+static void gsrn_stats_init(void);
+static void gsrn_stats_reset(void);
 
 void
 cb_bev_status_cli(struct bufferevent *bev, short what, void *arg)
@@ -31,11 +50,30 @@ cb_bev_status_cli(struct bufferevent *bev, short what, void *arg)
 	CLI_free(c);
 }
 
+static void
+cb_peers_shutdown(struct _peer *p, struct _peer_l_root *plr, void *arg)
+{
+	struct _cli_shutdown_param *param = (struct _cli_shutdown_param *)arg;
+	if ((p == NULL) || (plr == NULL))
+		return;
+
+	peer_l_id_t pl_id = PLR_L_get_id(plr);
+	if (pl_id != PEER_L_LISTENING)
+	{
+		param->n_notlistening += 1;
+		return;
+	}
+
+	// HERE: peer is LISTENING
+	GS_LOG_VV("[%6u] %32s Shutdown", p->id, GS_addr128hex(NULL, p->addr));
+	param->n_shutdown += 1;
+	PEER_goodbye(p);	
+}
 
 static void
 cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 {
-	int *first_call_ptr = (int *)arg;
+	struct _cli_list_param *param = (struct _cli_list_param *)arg;
 	if (p == NULL)
 	{
 		if (plr == NULL)
@@ -52,10 +90,26 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	if (!PEER_IS_SERVER(p) && (pl_id == PEER_L_CONNECTED))
 		return;
 
+	if (pl_id == PEER_L_CONNECTED)
+	{
+		// HERE: CONNECTED
+		// Do not show connected client (as we already show the connected buddy)
+		if (!PEER_IS_SERVER(p))
+			return;
+		// Return if only interested in LISTEN connections.
+		if (param->opcode == GSRN_CLI_OP_LIST_LISTEN)
+			return;
+	} else {
+		// HERE: Not CONNECTED
+		// Return if only interested in established connections
+		if (param->opcode == GSRN_CLI_OP_LIST_ESTAB)
+			return;
+	}
+
 	DEBUGF_W("Sending peer-id %d\n", p->id);
 	struct _cli_list_r msg;
 	memset(&msg, 0, sizeof msg);
-	msg.type = GSRN_CLI_TYPE_LIST_RESPONSE;
+	msg.hdr.type = GSRN_CLI_TYPE_LIST_RESPONSE;
 	msg.addr = htobe128(p->addr);
 	msg.pl_id = pl_id;
 	msg.peer_id = htonl(p->id);
@@ -73,9 +127,9 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 		GS_format_bps(msg.bps, sizeof msg.bps, PEER_get_bps(p), NULL);
 	}	
 
-	if (*first_call_ptr == 1)
+	if (param->first_call == 1)
 	{
-		*first_call_ptr = 0;
+		param->first_call = 0;
 		msg.flags |= GSRN_FL_CLI_LIST_START;
 	}
 
@@ -128,11 +182,41 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 
 
 static void
+cb_cli_shutdown(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli *c = (struct _cli *)arg;
+	struct _cli_shutdown msg;
+
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	DEBUGF_B("CLI Shutdown received (timer=%usec)\n", msg.timer_sec);
+
+	// Disconnect all listening peers.
+	struct _cli_shutdown_param p;
+	memset(&p, 0, sizeof p);
+	p.timer_sec = msg.timer_sec;
+	PEERS_walk(cb_peers_shutdown, &p);
+
+	// Mark to terminate when last ESTABLISHED GS connction finishes?
+	// NO: Do not self-terminate. Instead let GSRND linger
+	// around doing nothing. If we would self-terminate here then systemd would
+	// try to restart us - which is not what we want. Wait for GSRND to be shut down
+	// by systemctl instead.
+
+	CLI_printf(c, "%u peers shut down (LISTENING).", p.n_shutdown);
+	if (p.n_notlistening > 0)
+		CLI_printf(c, "WARNING: %u peers still connected (not LISTENING)",p.n_notlistening);
+}
+
+static void
 cb_cli_list(struct evbuffer *eb, size_t len, void *arg)
 {
 	struct _cli *c = (struct _cli *)arg;
+	struct _cli_list msg;
 
-	DEBUGF_B("CLI requested LIST\n");
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	DEBUGF_B("CLI requested LIST (opcode=%2.2x)\n", msg.opcode);
 	if (gopt.cli_out_evb == NULL)
 	{
 		gopt.cli_out_evb = evbuffer_new();
@@ -145,11 +229,15 @@ cb_cli_list(struct evbuffer *eb, size_t len, void *arg)
 		DEBUGF_R("Ohh, already %zu bytes in cli_out_evb\n", sz); // CAN NOT HAPPEN
 
 	gopt.usec_now = GS_usec();
+	struct _cli_list_param p;
+	memset(&p, 0, sizeof p);
+	p.first_call = 1;
+	p.opcode = msg.opcode;
 	// Gather data (to gopt.evb_cli_out)
-	int first_call = 1;
-	PEERS_walk(cb_peers_list, &first_call);
+	PEERS_walk(cb_peers_list, &p);
 
 	CLI_write(c, gopt.cli_out_evb);
+	CLI_printf(c, "");
 }
 
 static void
@@ -184,6 +272,37 @@ cb_cli_kill(struct evbuffer *eb, size_t len, void *arg)
 		CLI_printf(c, "ERR: killing by ID not yet supported!");
 
 	}
+}
+
+static void
+cb_cli_stats(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli *c = (struct _cli *)arg;
+	struct _cli_stats msg;
+	uint64_t usec_now = GS_usec();
+
+	DEBUGF("stats request\n");
+	evbuffer_remove(eb, &msg, sizeof msg);
+
+	struct _cli_stats_r r;
+	memset(&r, 0, sizeof r);
+
+	r.hdr.type = GSRN_CLI_TYPE_STATS_RESPONSE;
+	r.uptime_usec = usec_now - gstats.start_usec;
+	r.since_reset_usec = usec_now - gstats.reset_usec;
+	r.n_gs_connect = gstats.n_gs_connect;
+	r.n_gs_listen = gstats.n_gs_listen;
+	r.n_bad_auth = gstats.n_bad_auth;
+	r.n_gs_refused = gstats.n_gs_refused;
+
+	if (msg.opcode == GSRN_CLI_OP_STATS_RESET)
+	{
+		gsrn_stats_reset();
+		gstats.reset_usec = usec_now;
+	}
+
+	DEBUGF("senidng %zd\n", sizeof r);
+	CLI_msg(c, &r, sizeof r);
 }
 
 #define CLI_BADOPCODE(_xc, _xop)       CLI_printf(_xc, "ERR: Unknown opcode (%u)", _xop)
@@ -236,6 +355,23 @@ cb_cli_set(struct evbuffer *eb, size_t len, void *arg)
 		return;
 	}
 
+	if (msg.opcode == GSRN_CLI_OP_SET_LOG_VERBOSITY)
+	{
+		CLI_printf(c, "Log verbosity set from %d to %d", gopt.verbosity, msg.opvalue1);
+		gopt.verbosity = msg.opvalue1;
+		return;
+	}
+
+	if (msg.opcode == GSRN_CLI_OP_SET_PORT_CLI)
+	{
+		DEBUGF("Changing CLI port to %u\n", msg.port);
+		close_del_ev(&gd.ev_listen_cli);
+		gopt.port_cli = msg.port;
+		add_listen_sock(gopt.ip_cli, gopt.port_cli, &gd.ev_listen_cli, cb_accept_cli);
+		CLI_printf(c, "CLI listening on port %u", gopt.port_cli);
+		return;
+	}
+
 	CLI_BADOPCODE(c, msg.opcode);
 }
 
@@ -245,7 +381,10 @@ cb_accept_cli(int ls, short ev, void *arg)
 {
 	int sox;
 
+	fd_limit_unlimited();
 	sox = fd_net_accept(ls);
+	fd_limit_limited();
+
 	if (sox < 0)
 		goto err;
 
@@ -254,10 +393,12 @@ cb_accept_cli(int ls, short ev, void *arg)
 	if (c == NULL)
 		goto err;
 
-	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, 0, cb_cli_list, c); // variable length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_LIST, sizeof (struct _cli_list), cb_cli_list, c);
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_KILL, sizeof (struct _cli_kill), cb_cli_kill, c); // Fixed length message
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STOP, sizeof (struct _cli_stop), cb_cli_stop, c); // Fixed length message
 	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SET, sizeof (struct _cli_set), cb_cli_set, c); // Fixed length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_SHUTDOWN, sizeof (struct _cli_shutdown), cb_cli_shutdown, c); // Fixed length message
+	PKT_setcb(&c->pkt, GSRN_CLI_TYPE_STATS, sizeof (struct _cli_stats), cb_cli_stats, c); // Fixed length message
 	bufferevent_enable(c->bev, EV_READ);
 
 	return;
@@ -265,10 +406,45 @@ err:
 	XCLOSE(sox);
 }
 
+static void
+gsrn_stats_init(void)
+{
+	memset(&gstats, 0, sizeof gstats);
+	gstats.start_usec = GS_usec();
+	gstats.reset_usec = gstats.start_usec;
+}
+
+static void
+gsrn_stats_reset(void)
+{
+	uint64_t usec;
+
+	usec = gstats.start_usec;
+	memset(&gstats, 0, sizeof gstats);
+	gstats.start_usec = usec;
+	gstats.reset_usec = GS_usec();
+}
 
 void
 init_engine(void)
 {
+	gsrn_stats_init();
+
+	// Raise FD Limit but keep it just below Hard-Limit (ulimit -Hn) and keep
+	// those few reserved for CLI port connections:
+	struct rlimit *r = (struct rlimit *)&gopt.rlim_fd;
+	if (fd_limit_init() != 0)
+		ERREXIT("getrlimit()=%s\n", strerror(errno));
+	if (r->rlim_max <= 1024)
+		GS_LOG("WARNING: Max fd limit is %lu", r->rlim_max);
+	if (r->rlim_cur < r->rlim_max - GSRN_FD_RESERVE)
+	{
+		GS_LOG("WARNING: Raising file descriptor limit from %lu to %lu", r->rlim_cur, r->rlim_max - GSRN_FD_RESERVE);
+		if (fd_limit_limited() != 0)
+			ERREXIT("setrlimit()=%s\n", strerror(errno));;
+	}
+
+
 	// Start listening
 	add_listen_sock(INADDR_ANY, gopt.port, &gopt.ev_listen, cb_accept);
 	add_listen_sock(INADDR_ANY, gopt.port_ssl, &gopt.ev_listen_ssl, cb_accept_ssl);

@@ -37,6 +37,7 @@ struct _gopt
 	struct event *ev_listen_ssl;  // Listening socket event
 	struct event *ev_listen_con;  // Listening socket event
 	int is_concentrator;
+	struct rlimit rlim_fd;
 
 	uint64_t usec_now;
 	// binary trees for listening and waiting peers.

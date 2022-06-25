@@ -78,5 +78,16 @@ GSRN_change_state(struct _peer *p, uint8_t state)
 			// Allow
 			PKT_setcb(&p->pkt, GS_PKT_TYPE_ACCEPT, sizeof (struct _gs_accept), cb_gsrn_accept, p);
 			break;
+		case GSRN_STATE_FINISHED:
+			// Allowed
+			// Ignored
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_PING   , sizeof (struct _gs_ping)   , NULL, p);
+			// Not allowed
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_CONNECT, sizeof (struct _gs_connect), cb_gsrn_protocol_error, p);
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_LISTEN , sizeof (struct _gs_listen) , cb_gsrn_protocol_error, p);
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_ACCEPT , sizeof (struct _gs_accept) , cb_gsrn_protocol_error, p);
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_START  , sizeof (struct _gs_start)  , cb_gsrn_protocol_error, p);
+			PKT_setcb(&p->pkt, GS_PKT_TYPE_PONG   , sizeof (struct _gs_pong)   , cb_gsrn_protocol_error, p);
+			break;
 	}
 }
