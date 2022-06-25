@@ -69,7 +69,10 @@ gsrn_bad_auth_delay(struct _peer *p)
 	// HERE: Rapid LISTEN requests with BAD-AUTH.
 	// Delay the error and disconnect.
 	p->evt_bad_auth_delay = evtimer_new(gopt.evb, cb_evt_bad_auth_delay, p);
-	evtimer_add(p->evt_bad_auth_delay, TVSEC(GSRN_BAD_AUTH_DELAY));
+	// evtimer_add(p->evt_bad_auth_delay, TVSEC(GSRN_BAD_AUTH_DELAY));
+	uint64_t msec = (GSRN_BAD_AUTH_DELAY + random() % GSRN_BAD_AUTH_JITTER) * 1000 + random() % 1000;
+	DEBUGF("DELAY=%.03f sec\n", (float)msec/1000);
+	evtimer_add(p->evt_bad_auth_delay, TVMSEC(msec));
 
 	return 0;
 }
@@ -224,6 +227,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 			if (gsrn_listen(p, NULL) != 0)
 				goto err;
 
+			// HERE: Can be SUCCESS or delayed BAD-AUTH.
 			return;
 		}
 
@@ -355,14 +359,14 @@ cb_shutdown_complete(void *arg)
 
 	if (buddy == NULL)
 	{
-		PEER_free(p, 0);
+		PEER_free(p);
 		return;
 	}
 
 	if (PEER_IS_SHUT_WR_SENT(buddy))
 	{
-		PEER_free(p, 0);
-		PEER_free(buddy, 0);
+		PEER_free(p);
+		PEER_free(buddy);
 		return;
 	}
 
@@ -387,11 +391,10 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 	if (what & BEV_EVENT_TIMEOUT)
 	{
 		DEBUGF_C("[%6u] %c ***TIMEOUT***\n", p->id, IS_CS(p));
-		DEBUGF_HALT("HALT\n");
 		// We sent SHUT_WR to this peer but are not receiving any data from this peer.
-		PEER_free(p, 0);
+		PEER_free(p);
 		if (buddy)
-			PEER_free(buddy, 0);
+			PEER_free(buddy);
 		return;
 	}
 
@@ -411,7 +414,7 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 			DEBUGF_R("EVENT_EOF received 2nd time!\n");
 			// FIXME: Odd, EV_READ gets disabled (see below) but libevent invokes this
 			// twice every once in a while...
-			// PEER_free(p, 0); // pointer may have gotten freed already. 
+			// PEER_free(p); // pointer may have gotten freed already. 
 			return;
 		}
 
@@ -431,13 +434,14 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 		// Forward SHUT_WR to buddy (We wont send any more data)
 		// MIGHT FREE BUDDY and PEER.
 		PEER_shutdown(buddy, cb_shutdown_complete);
-		buddy = NULL;
 
 		return;
 	}
 
 	// Any other error-event is bad (disconnect hard) 
-	PEER_free(p, 0);
+	PEER_free(p);
+	if (buddy)
+		PEER_free(buddy);
 }
 
 void

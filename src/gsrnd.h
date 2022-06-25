@@ -16,11 +16,12 @@
 // listening gsocket with different token (same gsocket addr).
 #define GSRN_TOKEN_LINGER           (7)
 #define GSRN_SHUTDOWN_IDLE_TIMEOUT  (10)
-// Delay BAD_AUTH error by 30 seconds if 2 or more BAD_AUTH within
-// 60 seconds happen. This happens when user starts 'gs-nc -l' multiple
+// Delay BAD_AUTH error by DELAY+random(JITTER) if 2 or more BAD_AUTH within
+// BAD_AUTH_WINDOW happen. This happens when user starts 'gs-nc -l' multiple
 // times and using the same GS_SECRET.
-#define GSRN_BAD_AUTH_WINDOW        (60)
-#define GSRN_BAD_AUTH_DELAY         (30)
+#define GSRN_BAD_AUTH_WINDOW        (180)
+#define GSRN_BAD_AUTH_DELAY         (120)  // Wait DELAY+JITTER seconds before returning BAD-AUTH
+#define GSRN_BAD_AUTH_JITTER        (10)
 
 // Keep at least 10 FD's as reseve so if we run out of FD's that
 // CLI can still connect

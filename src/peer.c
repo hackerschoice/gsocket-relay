@@ -387,7 +387,13 @@ cb_evt_linger(int fd_notused, short event, void *arg)
 	{
 		pl_mgr_t_free(pl_mgr);
 		pl_mgr = NULL;
+		return;
 	}
+
+	// FIXME: Check if there are ANY in BAD-AUTH state and if so then disconnect the first one.
+	// This will allow a system that tries to connect with the same SECRET
+	// but multiple instances of gs-netcat to re-connect with one gs-netcat
+	// immediately.
 }
 
 void
@@ -585,7 +591,7 @@ PEER_goodbye(struct _peer *p)
 
 // Free a peer and also free its buddy if is_free_buddy is set.
 void
-PEER_free(struct _peer *p, int is_free_buddy)
+PEER_free(struct _peer *p)
 {
 	DEBUGF_G("[%6u] %c %s peer=%p, bev=%p\n", p->id, IS_CS(p), __func__, p, p->bev);
 
@@ -637,11 +643,6 @@ PEER_free(struct _peer *p, int is_free_buddy)
 	if (p->buddy != NULL)
 	{
 		p->buddy->buddy = NULL; // unlink myself from my buddy.
-		if (is_free_buddy != 0)
-		{
-			PEER_free(p->buddy, 0); // Disconnect my buddy.
-			p->buddy = NULL;
-		}
 	}
 
 	XCLOSE(p->fd);
@@ -696,12 +697,15 @@ PEER_stats_update(struct _peer *p, struct evbuffer *eb)
 	// For stats try to figure out if peers negotiate an SSL connection
 	if (p->in_n == 0)
 	{
-		// Check for 0x16 (22 ClientHelo) being the first octet.
+		// Check for 0x16 (22 ClientHelo & ServerHelo) being the first octet.
 		// TLS 1.2/1.2 = 16 03 03 ...
 		uint8_t c;
 		evbuffer_copyout(eb, &c, 1);
 		if (c == 0x16)
-			p->flags |= FL_PEER_IS_SAW_SSL_CLIENTHELO;
+		{
+			DEBUGF_Y("%c SSL-Helo received\n", IS_CS(p));
+			p->flags |= FL_PEER_IS_SAW_SSL_HELO;
+		}
 	}
 // #ifdef DEBUG
 // 	if (p->in_n == 0)

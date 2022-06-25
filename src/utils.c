@@ -113,6 +113,7 @@ init_vars(void)
 {
 	GS_library_init(gopt.err_fp, /* Debug Output */ gopt.err_fp, cb_gs_log);
 
+	srandom(GS_usec());
 	SSL_load_error_strings();
 	SSL_library_init();
 	gopt.ssl_ctx = SSL_CTX_new(TLS_server_method() /*SSLv23_client_method()*/);
@@ -144,14 +145,6 @@ init_vars(void)
 	XASSERT(gopt.evb != NULL, "Could not initialize libevent!\n");
 
 	init_engine();
-
-	// if (gopt.prg == PRG_GSRND)
-	// {
-	// 	// add_listen_sock(gopt.port_con, &gopt.ev_listen_con, cb_accept_con);
-
-	// } else if (gopt.prg == PRG_CLI) {
-
-	// }
 }
 
 static int is_fdlim_init;

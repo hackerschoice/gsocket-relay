@@ -135,14 +135,14 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 
 
 	memset(&msg.flagstr, '-', sizeof msg.flagstr);
-	if (p->flags & FL_PEER_IS_SAW_SSL_CLIENTHELO)
+	if (p->flags & FL_PEER_IS_SAW_SSL_HELO)
 		msg.fl.ssl = 'S';
 	uint8_t gpflags = p->gs_proto_flags;
 	msg.fl.major = p->version_major;
 	msg.fl.minor = p->version_minor;
 	if (p->buddy != NULL)
 	{
-		if (p->buddy->flags & FL_PEER_IS_SAW_SSL_CLIENTHELO)
+		if (p->buddy->flags & FL_PEER_IS_SAW_SSL_HELO)
 			msg.fl.ssl = 'S';
 		gpflags |= p->buddy->gs_proto_flags;
 		// Report the lowest of both version numbers to CLI.
@@ -243,7 +243,7 @@ cb_cli_list(struct evbuffer *eb, size_t len, void *arg)
 static void
 cb_free(struct _peer *p, void *arg)
 {
-	PEER_free(p, 0);
+	PEER_free(p);
 	*(int *)arg += 1;
 }
 

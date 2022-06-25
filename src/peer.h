@@ -96,7 +96,7 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 // #define FL_PEER_IS_GOODBYE               (0x08)  // PEER_goodbye was called.
 #define FL_PEER_IS_EOF_RECEIVED          (0x10)
 #define FL_PEER_IS_SHORTWAIT             (0x20)
-#define FL_PEER_IS_SAW_SSL_CLIENTHELO    (0x40)  // Detected an TLS ClientHelo
+#define FL_PEER_IS_SAW_SSL_HELO          (0x40)  // Detected an TLS Helo
 #define FL_PEER_IS_WANT_SEND_SHUT_WR     (0x80)
 #define FL_PEER_IS_WANT_FREE            (0x100)  // PEER_free() as soon as all data is written.
 #define FL_PEER_IS_SHUT_WR_SENT         (0x200)
@@ -117,7 +117,7 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 void PEER_conn_refused(struct _peer *p);
 void PEER_goodbye(struct _peer *p);
 int PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token);
-void PEER_free(struct _peer *p, int is_free_buddy);
+void PEER_free(struct _peer *p);
 void PEER_try_free(struct _peer *p);
 void PEER_shutdown(struct _peer *p, shutdown_complete_func_t func);
 
