@@ -319,7 +319,8 @@ static const char *peer_l_names[MAX_LISTS_BY_ADDR] = {
 	"WAIT  ",
 	"WAIT-A",
 	"ACCEPT",
-	"ESTABL"
+	"ESTABL",
+	"B-AUTH" 
 };
 
 

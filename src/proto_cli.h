@@ -53,6 +53,7 @@ struct _cli_list
 } __attribute__((__packed__));
 #define GSRN_CLI_OP_LIST_ESTAB           (0x01)
 #define GSRN_CLI_OP_LIST_LISTEN          (0x02)
+#define GSRN_CLI_OP_LIST_BAD             (0x04)
 
 struct _cli_stop
 {

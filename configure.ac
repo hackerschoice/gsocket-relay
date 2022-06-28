@@ -1,6 +1,6 @@
 dnl Process this File with autoconf to produce a configure script.
 AC_PREREQ([2.69])
-AC_INIT([gsocket-relay],[1.0.7])
+AC_INIT([gsocket-relay],[1.0.8])
 AC_CONFIG_AUX_DIR(config)
 AC_CANONICAL_TARGET
 

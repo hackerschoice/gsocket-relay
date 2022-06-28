@@ -309,7 +309,7 @@ pl_unlink(struct _peer *p)
 			if (pl_mgr->flags & FL_PL_IS_TOKEN_SET)
 			{
 				DEBUGF_C("Last listening peer. Token was set...\n");
-				evtimer_add(pl_mgr->evt_linger, TVSEC(GSRN_TOKEN_LINGER));
+				evtimer_add(pl_mgr->evt_linger, TVSEC(GSRN_TOKEN_LINGER_SEC));
 			}
 		}
 	}
@@ -379,7 +379,7 @@ cb_evt_linger(int fd_notused, short event, void *arg)
 {
 	struct _peer_l_mgr *pl_mgr = (struct _peer_l_mgr *)arg;
 
-	DEBUGF_C("addr=%s Timeout(%d sec). No listening socket created. Deleting token.\n", strx128x(pl_mgr->addr), GSRN_TOKEN_LINGER);
+	DEBUGF_C("addr=%s Timeout(%d sec). No listening socket created. Deleting token.\n", strx128x(pl_mgr->addr), GSRN_TOKEN_LINGER_SEC);
 	// Allow others to use the this addr to create listening gsockets
 	pl_mgr->flags &= ~FL_PL_IS_TOKEN_SET;
 
@@ -390,10 +390,31 @@ cb_evt_linger(int fd_notused, short event, void *arg)
 		return;
 	}
 
-	// FIXME: Check if there are ANY in BAD-AUTH state and if so then disconnect the first one.
+	// Check if there are ANY in BAD-AUTH state and if so then disconnect the first one.
 	// This will allow a system that tries to connect with the same SECRET
 	// but multiple instances of gs-netcat to re-connect with one gs-netcat
-	// immediately.
+	// immediately. Trigger p->evt_bad_auth_delay on any peer that has this != NULL
+	struct _peer_l_root *plr = &pl_mgr->plr[PEER_L_BAD_AUTH];
+	if (TAILQ_EMPTY(&plr->head))
+		return;
+
+	struct _peer *p = (struct _peer *)TAILQ_FIRST(&plr->head);
+	if (p == NULL)
+	{
+		DEBUGF_C("No peers in BAD-AUTH waiting...\n");
+		return;
+	}
+
+	if (p->evt_bad_auth_delay == NULL)
+	{
+		GS_LOG("ODD-ERROR: [%6u] %c fd=%d. auth_delay is NULL", p->id, IS_CS(p), p->fd);
+		return;
+	}
+
+	DEBUGF_C("[%6u] %c fd=%d Sending CLOSE from BAD-AUTH queue\n", p->id, IS_CS(p), p->fd);
+	// FIXME: Could we move it from BAD-AUTH to listen instead?
+	GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
+	PEER_goodbye(p);
 }
 
 void
@@ -606,7 +627,7 @@ PEER_free(struct _peer *p)
 		char bps_max[GS_BPS_MAXSIZE + 2]; // + /s
 		GS_format_bps(bps_max, sizeof bps_max, p->bps_max, "/s");
 
-		GS_LOG("[%6u] %32s DISCON  %s %*s %s %s", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
+		GS_LOG_V("[%6u] %32s DISCON  %s %*s %s %s", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
 	}
 
 #ifdef DEBUG

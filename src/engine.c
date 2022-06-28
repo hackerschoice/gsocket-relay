@@ -69,7 +69,6 @@ gsrn_bad_auth_delay(struct _peer *p)
 	// HERE: Rapid LISTEN requests with BAD-AUTH.
 	// Delay the error and disconnect.
 	p->evt_bad_auth_delay = evtimer_new(gopt.evb, cb_evt_bad_auth_delay, p);
-	// evtimer_add(p->evt_bad_auth_delay, TVSEC(GSRN_BAD_AUTH_DELAY));
 	uint64_t msec = (GSRN_BAD_AUTH_DELAY + random() % GSRN_BAD_AUTH_JITTER) * 1000 + random() % 1000;
 	DEBUGF("DELAY=%.03f sec\n", (float)msec/1000);
 	evtimer_add(p->evt_bad_auth_delay, TVMSEC(msec));
@@ -96,7 +95,10 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 		gstats.n_bad_auth += 1;
 		GSRN_change_state(p, GSRN_STATE_FINISHED);
 		if (gsrn_bad_auth_delay(p) == 0)
+		{
+			PEER_L_mv(p, PEER_L_BAD_AUTH);
 			return 0; // Trigger cb_evt_bad_auth_delay()
+		}
 
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
 		return -1;
@@ -185,7 +187,7 @@ buddy_up(struct _peer *server, struct _peer *client)
 	char s_ipport[32];
 	snprintf(s_ipport, sizeof s_ipport, "%s", gs_log_in_addr2str(&server->addr_in));
 	
-	GS_LOG("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, gs_log_in_addr2str(&client->addr_in), s_ipport);
+	GS_LOG_V("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, gs_log_in_addr2str(&client->addr_in), s_ipport);
 
 	DEBUGF_G("%c Server-%d fd=%d bev=%p\n", IS_CS(server), server->id, bufferevent_getfd(server->bev), server->bev);
 	DEBUGF_G("%c Client-%d fd=%d bev=%p\n", IS_CS(client), client->id, bufferevent_getfd(client->bev), client->bev);
@@ -211,6 +213,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		goto err;
 	}
 
+	DEBUGF_Y("msg.flags=%x\n", msg.flags);
 	// IGNORE any further LISTEN/CONNECT messages
 	GSRN_change_state(p, GSRN_STATE_CONNECT);
 
@@ -261,6 +264,14 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		return;
 	}
 
+	if (msg.flags & GS_FL_PROTO_SERVER_CHECK)
+	{
+		// HERE: Server is listening but we only want to check.
+		DEBUGF_Y("FL_PROTO_SERVER_CHECK is set. Server is ok\n");
+		GSRN_send_status_fatal(p, GS_STATUS_CODE_SERVER_OK, NULL);
+		goto err;
+	}
+		
 	// HERE: Buddy found. Connect them.
 	buddy_up(buddy /*server*/, p /*client*/);
 
@@ -438,7 +449,9 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 		return;
 	}
 
-	// Any other error-event is bad (disconnect hard) 
+	// Any other error-event is bad (disconnect hard)
+	// FIXME: What error can this be?
+	GS_LOG("ODD-ERROR: [%6u] c fd=%d, event=%d", p->id, IS_CS(p), p->fd, what);
 	PEER_free(p);
 	if (buddy)
 		PEER_free(buddy);

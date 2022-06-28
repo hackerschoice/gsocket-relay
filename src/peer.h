@@ -17,9 +17,10 @@ typedef enum
 	PEER_L_WAITING        = 1,   // Client waiting or short-waiting for listening server
 	PEER_L_WAIT_ACCEPT    = 2,   // Waiting for peer to send 'ACCEPT'
 	PEER_L_ACCEPTED       = 3,   // ACCEPT received.
-	PEER_L_CONNECTED      = 4
+	PEER_L_CONNECTED      = 4,
+	PEER_L_BAD_AUTH       = 5
 } peer_l_id_t;
-#define MAX_LISTS_BY_ADDR     (5)
+#define MAX_LISTS_BY_ADDR     (6)
 
 // A single list
 struct _peer_l_root

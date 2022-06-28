@@ -25,6 +25,7 @@ static void cmd_stats(char *opt, char *end);
 
 static void cmd_list_server(char *opt, char *end);
 static void cmd_list_client(char *opt, char *end);
+static void cmd_list_bad(char *opt, char *end);
 
 static void cmd_stop(char *opt, char *end);
 static void cmd_stop_listen(char *opt, char *end);
@@ -43,7 +44,9 @@ static void cmd_help_set(char *opt, char *end);
 
 static void cmd_shutdown(char *opt, char *end);
 
-#define NOCMD_PRINT() 	do {printf("Unknown command. Try 'help'.\n"); fflush(stdout);} while(0)
+static void print_prompt(void);
+
+#define NOCMD_PRINT() 	do {printf("Unknown command. Try 'help'.\n"); print_prompt();} while(0)
 
 // tuples of 'cmd-string' <=> 'function' 
 struct dp
@@ -73,7 +76,8 @@ struct dp dp_list[] = {
 	{ "all"         , cmd_list},
 	{ "server"      , cmd_list_server},
 	{ "established" , cmd_list_client},
-	{ "client"      , cmd_list_client}
+	{ "client"      , cmd_list_client},
+	{ "bad"         , cmd_list_bad}
 };
 
 struct dp dp_stop[] = {
@@ -216,6 +220,12 @@ static void
 cmd_list_client(char *opt, char *end)
 {
 	cmd_list_msg(GSRN_CLI_OP_LIST_ESTAB);
+}
+
+static void
+cmd_list_bad(char *opt, char *end)
+{
+	cmd_list_msg(GSRN_CLI_OP_LIST_BAD);
 }
 
 static void
@@ -383,6 +393,7 @@ cmd_help_list(char *opt, char *end)
 "all            - list all connections\n"
 "server         - list listening servers\n"
 "client         - list connected clients\n"
+"bad            - list bad peers\n"
 "Note:             HSXFLWAI\n"
 "    Domain prefix ┘││││││└─ Minor Version\n"
 "      SRP enabled ─┘││││└── Major Version\n"

@@ -14,7 +14,6 @@
 #define GSRN_IDLE_TIMEOUT           (60*60*2+5)
 // listening token to 'linger' for 15 seconds before allowing new
 // listening gsocket with different token (same gsocket addr).
-#define GSRN_TOKEN_LINGER           (7)
 #define GSRN_SHUTDOWN_IDLE_TIMEOUT  (10)
 // Delay BAD_AUTH error by DELAY+random(JITTER) if 2 or more BAD_AUTH within
 // BAD_AUTH_WINDOW happen. This happens when user starts 'gs-nc -l' multiple

@@ -12,7 +12,7 @@ struct _gstats gstats;
 
 struct _cli_list_param
 {
-	int first_call;
+	int n;
 	uint8_t opcode;
 };
 
@@ -86,24 +86,29 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	DEBUGF("  [%u] %c addr=%s\n", p->id, IS_CS(p), strx128x(p->addr));
 
 	peer_l_id_t pl_id = PLR_L_get_id(plr);
-	// Do not show connected client (as we alrady show the server connected)
-	if (!PEER_IS_SERVER(p) && (pl_id == PEER_L_CONNECTED))
-		return;
-
-	if (pl_id == PEER_L_CONNECTED)
+	if (param->opcode == GSRN_CLI_OP_LIST_BAD)
 	{
-		// HERE: CONNECTED
-		// Do not show connected client (as we already show the connected buddy)
+		if (pl_id != PEER_L_BAD_AUTH)
+			return;
+	} else if (param->opcode == GSRN_CLI_OP_LIST_ESTAB) {
+		if (pl_id != PEER_L_CONNECTED)
+			return;
 		if (!PEER_IS_SERVER(p))
 			return;
-		// Return if only interested in LISTEN connections.
-		if (param->opcode == GSRN_CLI_OP_LIST_LISTEN)
+	} else if (param->opcode == GSRN_CLI_OP_LIST_LISTEN) {
+		if (pl_id != PEER_L_LISTENING)
 			return;
+	} else if (param->opcode == 0) {
+		// ALL
+		if (pl_id == PEER_L_CONNECTED)
+		{
+			// Do not show connected client (as we already show the connected buddy)
+			if (!PEER_IS_SERVER(p))
+				return;
+		}
 	} else {
-		// HERE: Not CONNECTED
-		// Return if only interested in established connections
-		if (param->opcode == GSRN_CLI_OP_LIST_ESTAB)
-			return;
+		DEBUGF("SHOULD NOT HAPPEN\n");
+		return;
 	}
 
 	DEBUGF_W("Sending peer-id %d\n", p->id);
@@ -127,12 +132,11 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 		GS_format_bps(msg.bps, sizeof msg.bps, PEER_get_bps(p), NULL);
 	}	
 
-	if (param->first_call == 1)
+	if (param->n == 0)
 	{
-		param->first_call = 0;
 		msg.flags |= GSRN_FL_CLI_LIST_START;
 	}
-
+	param->n += 1;
 
 	memset(&msg.flagstr, '-', sizeof msg.flagstr);
 	if (p->flags & FL_PEER_IS_SAW_SSL_HELO)
@@ -231,13 +235,13 @@ cb_cli_list(struct evbuffer *eb, size_t len, void *arg)
 	gopt.usec_now = GS_usec();
 	struct _cli_list_param p;
 	memset(&p, 0, sizeof p);
-	p.first_call = 1;
 	p.opcode = msg.opcode;
 	// Gather data (to gopt.evb_cli_out)
 	PEERS_walk(cb_peers_list, &p);
 
 	CLI_write(c, gopt.cli_out_evb);
-	CLI_printf(c, "");
+	// CLI_printf() will also trigger a new prompt on cli side.
+	CLI_printf(c, "Total %d", p.n);
 }
 
 static void
@@ -263,12 +267,14 @@ cb_cli_kill(struct evbuffer *eb, size_t len, void *arg)
 	int killed = 0;
 	if (msg.peer_id == 0)
 	{
+		// HERE: By GS-ADDRESS
 		PEER_by_addr(msg.addr, cb_free, &killed);
 		if (killed == 0)
 			CLI_printf(c, "%s - No such address.", strx128x(msg.addr));
 		else
 			CLI_printf(c, "%d connections terminated.", killed);
 	} else {
+		// HERE: By PEER-ID
 		CLI_printf(c, "ERR: killing by ID not yet supported!");
 
 	}
