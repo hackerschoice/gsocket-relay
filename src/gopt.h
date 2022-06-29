@@ -26,15 +26,17 @@ struct _gopt
 	FILE *log_fp;
 	SSL_CTX *ssl_ctx;
 	uint32_t ip_cli;         // 127.0.0.1
-	uint16_t port_cli;
-	uint16_t port;           // Edge port
-	uint16_t port_ssl;       // Edge SSL port
+	uint16_t port_cli;       // Only used by gsrn_cli.c
 	uint16_t port_cnc;       // Concentrator port (no SSL)
 	uint32_t ip_cnc;         // IP of concentrator
+
+	struct _port_listhead ports_head;
+	struct _port_listhead ports_cli_head;
+
 	int verbosity;
 	struct event_base *evb;      // libevent base
-	struct event *ev_listen;      // Listening socket event
-	struct event *ev_listen_ssl;  // Listening socket event
+	// struct event *ev_listen;      // Listening socket event
+	// struct event *ev_listen_ssl;  // Listening socket event
 	struct event *ev_listen_con;  // Listening socket event
 	int is_concentrator;
 	struct rlimit rlim_fd;

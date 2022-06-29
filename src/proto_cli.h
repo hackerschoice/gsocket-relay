@@ -143,6 +143,7 @@ struct _cli_stats_r
 	uint32_t n_peers_total;
 	uint32_t n_peers_listening;
 	uint32_t n_peers_connected;
+	uint32_t n_peers_badauthwait;
 } __attribute__((__packed__));
 
 #define GSRN_CLI_HDR_TLV_SIZE         (sizeof (struct _cli_hdr_tlv))

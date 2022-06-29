@@ -66,7 +66,8 @@ cb_t_peers_walk(const void *nodep, const VISIT which, const int depth)
 		// Call *func for each new list but with peer set to NULL.
 		(*gopt.t_peers.walk_peers_func)(NULL, &pl_mgr->plr[i], gopt.t_peers.walk_peers_func_arg);
 		struct _peer *p;
-		TAILQ_FOREACH(p, &pl_mgr->plr[i].head, ll)
+		struct _peer *temp_p = NULL;
+		TAILQ_FOREACH_SAFE(p, &pl_mgr->plr[i].head, ll, temp_p)
 			(*gopt.t_peers.walk_peers_func)(p, &pl_mgr->plr[i], gopt.t_peers.walk_peers_func_arg);
 	}
 }
@@ -208,7 +209,8 @@ PEER_by_addr(uint128_t addr, peer_func_t cb_peer, void *arg)
 			continue;
 
 		struct _peer *p;
-		TAILQ_FOREACH(p, &plr->head, ll)
+		struct _peer *temp_p = NULL;
+		TAILQ_FOREACH_SAFE(p, &plr->head, ll, temp_p)
 		{
 			n = pl_mgr->n_entries;
 			(*cb_peer)(p, arg);
@@ -441,12 +443,13 @@ cb_evt_shortwait(int fd_notused, short event, void *arg)
 	DEBUGF_W("addr=%s Timeout(%d sec). No server connected. Disconnecting %d clients\n", strx128x(pl_mgr->addr), GSRN_SHORTWAIT_TIMEOUT, plr->n_entries);
 
 	struct _peer *p;
-	TAILQ_FOREACH(p, &plr->head, ll)
+	struct _peer *temp_p = NULL;
+	TAILQ_FOREACH_SAFE(p, &plr->head, ll, temp_p)
 	{
 		if (!(PEER_IS_SHORTWAIT(p)))
 			continue;
 		DEBUGF_W("  [%u] Disconnecting\n", p->id);
-		PEER_conn_refused(p);
+		PEER_conn_refused(p); // WARN: Might free(p)
 	}
 }
 

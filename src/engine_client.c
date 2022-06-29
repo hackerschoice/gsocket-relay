@@ -544,15 +544,16 @@ cb_cli_stats_r(struct evbuffer *eb, size_t len, void *arg)
 
 	evbuffer_remove(eb, &msg, sizeof msg);
 
-	printt("Uptime     : ", msg.uptime_usec);
-	printt("Period     : ", msg.since_reset_usec);
-	printf("GS-Listen  : %"PRIu64"\n", msg.n_gs_listen);
-	printf("GS-Bad Auth: %"PRIu64"\n", msg.n_bad_auth);
-	printf("GS-Connect : %"PRIu64"\n", msg.n_gs_connect);
-	printf("GS-Refused : %"PRIu64"\n", msg.n_gs_refused);
-	printf("Listening  : %"PRIu32"\n", msg.n_peers_listening);
-	printf("Connected  : %"PRIu32"\n", msg.n_peers_connected);
-	printf("Waiting    : %"PRId32"\n", msg.n_peers_total - (msg.n_peers_listening + msg.n_peers_connected));
+	printt("Uptime      : ", msg.uptime_usec);
+	printt("Period      : ", msg.since_reset_usec);
+	printf("GS-Listen   : %"PRIu64"\n", msg.n_gs_listen);
+	printf("GS-Bad Auth : %"PRIu64"\n", msg.n_bad_auth);
+	printf("GS-Connect  : %"PRIu64"\n", msg.n_gs_connect);
+	printf("GS-Refused  : %"PRIu64"\n", msg.n_gs_refused);
+	printf("Listening   : %"PRIu32"\n", msg.n_peers_listening);
+	printf("Connected   : %"PRIu32"\n", msg.n_peers_connected);
+	printf("BadAuthWait : %"PRIu32"\n", msg.n_peers_badauthwait);
+	printf("Waiting     : %"PRId32"\n", msg.n_peers_total - (msg.n_peers_listening + msg.n_peers_connected + msg.n_peers_badauthwait));
 
 	print_prompt();
 }

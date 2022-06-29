@@ -12,7 +12,8 @@ struct _gd gd;
 struct _g_debug_ctx g_dbg_ctx;
 #endif
 
-// static prg_t g_prg;
+static int PORT_add_listen(struct _port *pt, uint32_t ip, event_callback_fn cb_func, void *arg);
+static void PORT_close(struct _port *pt);
 static void cb_gs_log(struct _gs_log_info *l);
 
 const char *
@@ -39,13 +40,14 @@ strx128x(uint128_t x)
 static void
 init_defaults_gsrnd(void)
 {
-	gopt.port = GSRN_DEFAULT_PORT;
-	gopt.port_ssl = GSRN_DEFAULT_PORT_SSL;
+	TAILQ_INIT(&gopt.ports_head);
+	TAILQ_INIT(&gopt.ports_cli_head);
 }
 
 static void
 init_defaults_cli()
 {
+	gopt.port_cli = CLI_DEFAULT_PORT;
 }
 
 void
@@ -55,7 +57,7 @@ init_defaults(prg_t prg)
 	gopt.err_fp = stderr;
 	gopt.log_fp = stderr;
 	gopt.ip_cli = ntohl(inet_addr("127.0.0.1"));
-	gopt.port_cli = CLI_DEFAULT_PORT;
+	// gopt.port_cli = CLI_DEFAULT_PORT;
 
 	// Must ignore SIGPIPE. Epoll may signal that socket is ready for wiriting
 	// but gets closed by remote before calling write().
@@ -68,27 +70,103 @@ init_defaults(prg_t prg)
 }
 
 void
-add_listen_sock(uint32_t ip, int port, struct event **evptr, event_callback_fn cb_func)
+PORTSQ_add(struct _port_listhead *head, int port)
 {
-	if (evptr == NULL)
+	struct _port *pt;
+
+	pt = calloc(1, sizeof (struct _port));
+	XASSERT(pt != NULL, "calloc() failed\n");
+
+	pt->port = port;
+
+	TAILQ_INSERT_TAIL(head, pt, ll);
+}
+
+void
+PORTSQ_listen(struct _port_listhead *head, uint32_t ip, uint16_t port_default, event_callback_fn cb_func)
+{
+	if (TAILQ_EMPTY(head))
+		PORTSQ_add(head, port_default);
+
+	struct _port *pt;
+	int ret;
+	TAILQ_FOREACH(pt, head, ll)
+	{
+		DEBUGF("port=%u\n", pt->port);
+		ret = PORT_add_listen(pt, ip, cb_func, pt);
+		if (ret != 0)
+		{
+			GS_LOG("ERR: listen(%d): %s\n", pt->port, strerror(errno));
+			DEBUGF("listen(%d): %s\n", pt->port, strerror(errno));
+		}
+	}
+}
+
+static void
+PORT_close(struct _port *pt)
+{
+	if (pt->ev == NULL)
 		return;
 
-	if (port <= 0)
+	int fd;
+	fd = event_get_fd(pt->ev);
+	if (fd < 0)
 		return;
 
+	event_del(pt->ev);
+	event_free(pt->ev);
+	pt->ev = NULL;
+
+	close(fd);
+}
+
+// Close all ports (and free all events). Do not free Q as we later may want
+// to cal PORTSQ_listen() again.
+void
+PORTSQ_close(struct _port_listhead *head)
+{
+	struct _port *pt;
+
+	TAILQ_FOREACH(pt, head, ll)
+	{
+		PORT_close(pt);
+	}
+}
+
+void
+PORTSQ_free(struct _port_listhead *head)
+{
+	struct _port *pt;
+	struct _port *temp_pt;
+
+	TAILQ_FOREACH_SAFE(pt, head, ll, temp_pt)
+	{
+		PORT_close(pt);
+		TAILQ_REMOVE(head, pt, ll);
+	}
+}
+
+static int
+PORT_add_listen(struct _port *pt, uint32_t ip, event_callback_fn cb_func, void *arg)
+{
 	int ls;
 	int ret;
-	ls = fd_new_socket(SOCK_STREAM);
-	ret = fd_net_listen(ls, ip, port);
-	if (ret < 0)
-	{
-		GS_LOG("ERR: listen(%d): %s\n", port, strerror(errno));
-		DEBUGF("listen(%d): %s\n", port, strerror(errno));
-		return;
-	}
 
-	*evptr = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, evptr);
-	event_add(*evptr, NULL);
+	ls = fd_new_socket(SOCK_STREAM);
+	if (ls < 0)
+		goto err;
+	ret = fd_net_listen(ls, ip, pt->port);
+	if (ret < 0)
+		goto err;
+
+	pt->ev = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, arg);
+	XASSERT(pt->ev != NULL, "event_new() failed\n");
+
+	event_add(pt->ev, NULL);
+	return 0;
+err:
+	XCLOSE(ls);
+	return -1;
 }
 
 void
@@ -114,11 +192,13 @@ init_vars(void)
 	GS_library_init(gopt.err_fp, /* Debug Output */ gopt.err_fp, cb_gs_log);
 
 	srandom(GS_usec());
+#if 0
 	SSL_load_error_strings();
 	SSL_library_init();
 	gopt.ssl_ctx = SSL_CTX_new(TLS_server_method() /*SSLv23_client_method()*/);
 	XASSERT(gopt.ssl_ctx != NULL, "Failed creating SSL context\n");
 	
+	// FIXME: What we want is that port 443 supports cleartext and SSL.
 	if (gopt.port_ssl > 0)
 	{
 		// Dont explode when realloc buffers
@@ -140,11 +220,12 @@ init_vars(void)
 			exit(1);
 	 	}
 	}
+#endif
 
 	gopt.evb = event_base_new();
 	XASSERT(gopt.evb != NULL, "Could not initialize libevent!\n");
 
-	init_engine();
+	init_engine(); // either in engine_client.c or engine_server.c
 }
 
 static int is_fdlim_init;
@@ -179,79 +260,6 @@ fd_limit_limited()
 
 	r->rlim_cur = r->rlim_max - GSRN_FD_RESERVE;
 	return setrlimit(RLIMIT_NOFILE, r);
-}
-
-static void
-usage(char *err)
-{
-	if (err)
-		fprintf(stderr, "%s", err);
-
-	fprintf(stderr, "Version %s\n"
-" -p <port>     TCP listening port [default=%d]\n"
-" -P <port>     SSL listening port. Use 0 to disable SSL support [default=%d]\n"
-" -m <port>     TCP port for cli [default=%d]\n"
-" -C            Listen for cnc connections [default=no]\n"
-" -c <port>     TCP port of cnc [default=%d]\n"
-" -d <IP>       Destination IP of CNC server [default=none]\n"
-" -L <file>     Logfile [default=stderr]\n"
-" -v            Verbosity level\n"
-" -a            Log IP addresses [disabled by default]\n"
-"", VERSION, GSRN_DEFAULT_PORT, GSRN_DEFAULT_PORT_SSL, CLI_DEFAULT_PORT, GSRN_DEFAULT_PORT_CON);
-
-	if (err)
-		exit(255);
-
-	exit(0);
-}
-
-void
-do_getopt(int argc, char *argv[])
-{
-	int c;
-
-	opterr = 0;
-	while ((c = getopt(argc, argv, "L:p:P:c:d:m:hva")) != -1)
-	{
-		switch (c)
-		{
-			case 'L':
-				gopt.log_fp = fopen(optarg, "a");
-				if (gopt.log_fp == NULL)
-					ERREXIT("fopen(%s): %s\n", optarg, strerror(errno));
-				gopt.err_fp = gopt.log_fp;
-				break;
-			case 'p':
-				gopt.port = atoi(optarg);
-				break;
-			case 'P':
-				gopt.port_ssl = atoi(optarg);
-				break;
-			case 'm':
-				gopt.port_cli = atoi(optarg);
-				break;
-			case 'C':
-				gopt.is_concentrator = 1;
-				break;
-			case 'c':
-				gopt.port_cnc = atoi(optarg);
-				break;
-			case 'd':
-				gopt.ip_cnc = inet_addr(optarg);
-				break;
-			case 'v':
-				gopt.verbosity += 1;
-				break;
-			case 'a':
-				gd.is_log_ip = 1;
-				break;
-			case 'h':
-				usage(NULL);
-				break;
-			default:
-				usage("Wrong parameter\n");
-		}
-	}
 }
 
 static void

@@ -146,6 +146,15 @@
 #define INT128_HIGH(x)   (uint64_t)(x>>64)
 #define INT128_LOW(x)    (uint64_t)(x)
 
+// Haha. Linux's TAILQ_FOREACH() is not safe when the element is free'd.
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, tvar) \
+	for ((var) = TAILQ_FIRST((head)); \
+		(var) && ((tvar) = TAILQ_NEXT((var), field), 1); \
+		(var) = (tvar))
+#endif
+
+
 #define SOMAXCON       (64 * 1024)  // listen()
 
 #define EX_EXECFAILED  248

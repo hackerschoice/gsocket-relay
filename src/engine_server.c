@@ -314,6 +314,7 @@ cb_cli_stats(struct evbuffer *eb, size_t len, void *arg)
 	// we treat this as '1 connection'.
 	r.n_peers_connected = gopt.t_peers.n_entries[PEER_L_CONNECTED] / 2;
 	r.n_peers_listening = gopt.t_peers.n_entries[PEER_L_LISTENING];
+	r.n_peers_badauthwait = gopt.t_peers.n_entries[PEER_L_BAD_AUTH];
 
 	if (msg.opcode == GSRN_CLI_OP_STATS_RESET)
 	{
@@ -336,8 +337,7 @@ cb_cli_stop(struct evbuffer *eb, size_t len, void *arg)
 
 	if (msg.opcode == GSRN_CLI_OP_STOP_LISTEN_TCP)
 	{
-		close_del_ev(&gopt.ev_listen);
-		close_del_ev(&gopt.ev_listen_ssl);
+		PORTSQ_close(&gopt.ports_head);
 
 		CLI_printf(c, "Stopped TCP port.");
 		return;
@@ -385,10 +385,12 @@ cb_cli_set(struct evbuffer *eb, size_t len, void *arg)
 	if (msg.opcode == GSRN_CLI_OP_SET_PORT_CLI)
 	{
 		DEBUGF("Changing CLI port to %u\n", msg.port);
-		close_del_ev(&gd.ev_listen_cli);
-		gopt.port_cli = msg.port;
-		add_listen_sock(gopt.ip_cli, gopt.port_cli, &gd.ev_listen_cli, cb_accept_cli);
-		CLI_printf(c, "CLI listening on port %u", gopt.port_cli);
+		PORTSQ_close(&gopt.ports_cli_head);
+		PORTSQ_free(&gopt.ports_cli_head);
+		PORTSQ_add(&gopt.ports_cli_head, msg.port);
+		PORTSQ_listen(&gopt.ports_cli_head, gopt.ip_cli, 0 /*not used*/, cb_accept_cli);
+
+		CLI_printf(c, "CLI listening on port %u", msg.port);
 		return;
 	}
 
@@ -462,7 +464,6 @@ init_engine(void)
 		ERREXIT("setrlimit()=%s\n", strerror(errno));;
 
 	// Start listening
-	add_listen_sock(INADDR_ANY, gopt.port, &gopt.ev_listen, cb_accept);
-	add_listen_sock(INADDR_ANY, gopt.port_ssl, &gopt.ev_listen_ssl, cb_accept_ssl);
-	add_listen_sock(gopt.ip_cli, gopt.port_cli, &gd.ev_listen_cli, cb_accept_cli);
+	PORTSQ_listen(&gopt.ports_head, INADDR_ANY, GSRN_DEFAULT_PORT, cb_accept);
+	PORTSQ_listen(&gopt.ports_cli_head, gopt.ip_cli, CLI_DEFAULT_PORT, cb_accept_cli);
 }
