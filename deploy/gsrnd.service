@@ -13,7 +13,7 @@ RestartSec=1
 #Need root for port 443
 #User=gsnet
 Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
-ExecStart=/home/gsnet/usr/bin/gsrnd -p443 -p7350 
+ExecStart=/home/gsnet/usr/bin/gsrnd-start.sh -p443 -p7350 
 StandardOutput=journal
 
 [Install]
