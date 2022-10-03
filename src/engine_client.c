@@ -481,9 +481,9 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	evbuffer_remove(eb, &msg, sizeof msg);
 
 	if (msg.flags & GSRN_FL_CLI_LIST_START)
-		printf("[    ID] Address                          HSXFLWAI State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
-	//          [     4] 435701b27bf6e7467bef67fb3a4f2c17 a-----11 LISTEN     2s 10.0.2.2:521          - 10.0.2.2:526          (    2s)   2.6KB [  1.3KB/s]
-	//          [     4] 435701b27bf6e7467bef67fb3a4f2c17 zSXFLW12 ESTABL 99h05m 123.456.789.123:65123 - 111.222.333.444:64567 (99h03m)   2.6KB [  1.3KB/s]
+		printf("[       ID] Address                          HSXFLWAI State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
+	//          [        4] 435701b27bf6e7467bef67fb3a4f2c17 a-----11 LISTEN     2s 10.0.2.2:521          - 10.0.2.2:526          (    2s)   2.6KB [  1.3KB/s]
+	//          [        4] 435701b27bf6e7467bef67fb3a4f2c17 zSXFLW12 ESTABL 99h05m 123.456.789.123:65123 - 111.222.333.444:64567 (99h03m)   2.6KB [  1.3KB/s]
 
 	uint8_t hostname_id;
 	hostname_id = GS_ADDR_get_hostname_id((uint8_t *)&msg.addr); // Network Byte Order
@@ -509,7 +509,7 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	memcpy(&ip, &msg.ip, sizeof ip);
 	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(ip), ntohs(msg.port));
 
-	printf("[%6u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
+	printf("[%9u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
 
 	if (msg.buddy_port != 0)
 	{

@@ -451,7 +451,7 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 
 	// Any other error-event is bad (disconnect hard)
 	// FIXME: What error can this be?
-	GS_LOG("ODD-ERROR: [%6u] c fd=%d, event=%d", p->id, IS_CS(p), p->fd, what);
+	GS_LOG("ODD-ERROR: [%6u] %c fd=%d, event=%d", p->id, IS_CS(p), p->fd, what);
 	PEER_free(p);
 	if (buddy)
 		PEER_free(buddy);

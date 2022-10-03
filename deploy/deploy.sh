@@ -53,7 +53,7 @@ restart_host()
 echo "Relay  : ${VER_RELAY}"
 echo "GSocket: ${VER_GS}"
 
-hosts="gs1 gs2 gs3 gs4 gs5"
+hosts="gs1 gs2 gs3"
 [[ -n "$1" ]] && hosts="$@"
 
 g_port=64222

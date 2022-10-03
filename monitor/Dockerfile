@@ -11,4 +11,4 @@ RUN apt update -y && \
 	echo DONE
 
 ENTRYPOINT ["/heartbeat.sh"]
-CMD ["gs1.thc.org", "gs2.thc.org", "gs3.thc.org", "gs4.thc.org", "gs5.thc.org"]
+CMD ["gs1.thc.org", "gs2.thc.org", "gs3.thc.org"]
