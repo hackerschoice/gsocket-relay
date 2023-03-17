@@ -1,13 +1,26 @@
 #! /bin/bash
 
+[[ $BASH_VERSION == "3."* ]] && { echo >&2 "BASH to old (${BASH_VERSION}). Try /usr/local/bin/bash ${0}."; exit 255; }
 # Test if all servers are alive and functional
 INTERVAL=60 # Check all servers every n seconds
 
 BASEDIR="$(cd "$(dirname "${0}")" || exit; pwd)"
 source "${BASEDIR}/funcs"
+[[ -f "${BASEDIR}/.env" ]] && source "${BASEDIR}/.env"
 
 command -v gs-netcat >/dev/null || ERREXIT 254 "Not found: gs-netcat"
 command -v md5sum >/dev/null || ERREXIT 254 "Not found: md5sum"
+command -v jq >/dev/null || ERREXIT 253 "Not found: jq"
+command -v gdate >/dev/null && date(){ gdate "$@"; }
+# Set these in .env
+[[ -z $TG_TOKEN ]] && ERREXIT 252 "TG_TOKEN not set."
+[[ -z $TG_CHATID ]] && ERREXIT 251 "TG_CHATID not set."
+
+[[ -z $MYNAME ]] && {
+	MYNAME=$(hostname)
+	MYNAME=${MYNAME%%.*}
+}
+
 
 waitkp()
 {
@@ -26,6 +39,15 @@ waitkp()
 		x=$((x+1))
 		[[ $x -gt $rounds ]] && break
 	done
+}
+
+
+tg_msg()
+{
+	local str
+
+	str=$(curl -fLSs --data-urlencode "text=[$(date '+%F %T' -u)][${MYNAME}] $*" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHATID}" | jq '.ok')
+	[[ $str != "true" ]] && ERREXIT 249 "Telegram API failed...."
 }
 
 heartbeat()
@@ -48,18 +70,18 @@ heartbeat()
 	# Compare results
 	if [[ "$md5_in" = "$(XMD5 /tmp/gsrn_heartbeat_server_out.txt)" ]]; then
 		OK_COUNT=$((OK_COUNT+=1))
-		eval unset test_failed_\"${sn}\"
+		unset failed["${sn}"]
 		return
 	fi
 
 	# Return if we already reported this error
-	eval [[ -n \$"test_failed_${sn}" ]] && return
+	[[ -n ${failed["${sn}"]} ]] && return
 
 	# Report error ONCE until test is OK again
-	eval "test_failed_${sn}"=1
-	ERR_MSG+="FAILED: Server '$server':\n"
-	ERR_MSG+="=====Server=====\n$(cat /tmp/gsrn_heartbeat_server_err.txt)\n"
-	ERR_MSG+="=====Client=====\n$(cat /tmp/gsrn_heartbeat_client_err.txt)\n"
+	failed["${sn}"]=1
+	ERR_MSG+="FAILED: Server '$server':"$'\n'
+	ERR_MSG+="=====Server====="$'\n'"$(cat /tmp/gsrn_heartbeat_server_err.txt)"$'\n'
+	ERR_MSG+="=====Client====="$'\n'"$(cat /tmp/gsrn_heartbeat_client_err.txt)"
 }
 
 init_vars()
@@ -69,21 +91,23 @@ init_vars()
 	SECRET="$(gs-netcat -g)"
 }
 
+tg_msg "Starting monitor for ${HOSTS[*]}"
 
-
+declare -A failed
 ts_last="$(date +%s)"
 while :; do
 	init_vars
 
 	OK_COUNT=0
-	ts_date="$(date)"
 	unset ERR_MSG
 	for h in "${HOSTS[@]}"; do
 		heartbeat "$h"
 	done
-	[[ -n $ERR_MSG ]] && echo -en "$ERR_MSG"
+	[[ -n $ERR_MSG ]] && {
+		tg_msg "$ERR_MSG" || ERREXIT 250
+	}
 
-	[[ "$OK_COUNT" -eq "${#HOSTS[@]}" ]] && echo "[OK] OK_COUNT=$OK_COUNT ${ts_date}"
+	[[ "$OK_COUNT" -eq "${#HOSTS[@]}" ]] && echo "OK_COUNT=$OK_COUNT"
 	# ERREXIT 0 "DEBUG TESTING"
 	ts_now="$(date +%s)"
 
