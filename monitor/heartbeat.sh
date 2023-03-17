@@ -46,8 +46,9 @@ tg_msg()
 {
 	local str
 
-	str=$(curl -fLSs --data-urlencode "text=[$(date '+%F %T' -u)][${MYNAME}] $*" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHATID}" | jq '.ok')
+	str=$(curl -fLSs --data-urlencode "text=\[$(date '+%F %T' -u)]\[${MYNAME}] $*" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHATID}&parse_mode=Markdown" | jq '.ok')
 	[[ $str != "true" ]] && ERREXIT 249 "Telegram API failed...."
+	return 0
 }
 
 heartbeat()
@@ -64,12 +65,15 @@ heartbeat()
 	GSPID2="$(sh -c 'GSOCKET_HOST="'$1'" gs-netcat -s "'$SECRET'" -w </tmp/gsrn_heartbeat_in.txt 2>/tmp/gsrn_heartbeat_client_err.txt >/tmp/gsrn_heartbeat_client_out.txt & echo ${!}')"
 
 	# Wait max sleep_wd seconds for them to complete.
-	waitkp $GSPID1
-	waitkp $GSPID2
+	waitkp "$GSPID1"
+	waitkp "$GSPID2"
 
 	# Compare results
 	if [[ "$md5_in" = "$(XMD5 /tmp/gsrn_heartbeat_server_out.txt)" ]]; then
 		OK_COUNT=$((OK_COUNT+=1))
+		[[ -n ${failed["${sn}"]} ]] && {
+			tg_msg "✅ OK: Server: '$server'"
+		}
 		unset failed["${sn}"]
 		return
 	fi
@@ -79,9 +83,15 @@ heartbeat()
 
 	# Report error ONCE until test is OK again
 	failed["${sn}"]=1
-	ERR_MSG+="FAILED: Server '$server':"$'\n'
-	ERR_MSG+="=====Server====="$'\n'"$(cat /tmp/gsrn_heartbeat_server_err.txt)"$'\n'
-	ERR_MSG+="=====Client====="$'\n'"$(cat /tmp/gsrn_heartbeat_client_err.txt)"
+	tg_msg '🔥 FAILED: Server '"${server}"':
+_=====Server=====_
+```
+'"$(grep -v ^= /tmp/gsrn_heartbeat_server_err.txt)"'
+```_=====Client=====_
+```
+'"$(grep -v ^= /tmp/gsrn_heartbeat_client_err.txt)"'
+```'
+
 }
 
 init_vars()
@@ -91,7 +101,7 @@ init_vars()
 	SECRET="$(gs-netcat -g)"
 }
 
-tg_msg "Starting monitor for ${HOSTS[*]}"
+tg_msg '🏁 Starting *monitor* for '"${HOSTS[*]}"
 
 declare -A failed
 ts_last="$(date +%s)"
@@ -103,9 +113,9 @@ while :; do
 	for h in "${HOSTS[@]}"; do
 		heartbeat "$h"
 	done
-	[[ -n $ERR_MSG ]] && {
-		tg_msg "$ERR_MSG" || ERREXIT 250
-	}
+	# [[ -n $ERR_MSG ]] && {
+	# 	tg_msg "$ERR_MSG"
+	# }
 
 	[[ "$OK_COUNT" -eq "${#HOSTS[@]}" ]] && echo "OK_COUNT=$OK_COUNT"
 	# ERREXIT 0 "DEBUG TESTING"
