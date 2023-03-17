@@ -1,0 +1,26 @@
+[Unit]
+Description=Global Socket Relay Network Heartbeat
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+#LimitNOFILE=infinity
+#LimitCORE=infinity
+#WorkingDirectory=/tmp
+Restart=always
+RestartSec=60
+#Need root for port 443
+User=gsnet
+Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
+Environment="PATH=/home/gsnet/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/gsnet/usr/bin/heartbeat.sh
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/gsrn-hb.service
+# systemctl enable gsrn-hb
+# systemctl start gsrn-hb
+# journalctl -u gsrn-hb -f --no-hostname
