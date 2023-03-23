@@ -39,6 +39,7 @@ waitkp()
 		x=$((x+1))
 		[[ $x -gt $rounds ]] && break
 	done
+	kill $1
 }
 
 
@@ -69,7 +70,7 @@ heartbeat()
 	waitkp "$GSPID2"
 
 	# Compare results
-	if [[ "$md5_in" = "$(XMD5 /tmp/gsrn_heartbeat_server_out.txt)" ]]; then
+	if [[ "$md5_in" == "$(XMD5 /tmp/gsrn_heartbeat_server_out.txt)" ]] && [[ "$md5_in" == "$(XMD5 /tmp/gsrn_heartbeat_client_out.txt)" ]]; then
 		OK_COUNT=$((OK_COUNT+=1))
 		[[ -n ${failed["${sn}"]} ]] && {
 			tg_msg "✅ OK: Server: '$server'"
