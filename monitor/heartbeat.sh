@@ -31,11 +31,11 @@ waitkp()
 	sleep_wd=5
 
 	x=0
-	rounds=$((sleep_wd * 10))
+	rounds=$((sleep_wd * 2))
 
 	while :; do
 		kill -0 $1 &>/dev/null || return
-		sleep 0.1
+		sleep 0.5
 		x=$((x+1))
 		[[ $x -gt $rounds ]] && break
 	done
