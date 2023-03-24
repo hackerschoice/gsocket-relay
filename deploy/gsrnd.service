@@ -1,7 +1,6 @@
 [Unit]
 Description=Global Socket Relay Network Server
 After=network.target
-StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -10,7 +9,7 @@ Restart=always
 RestartSec=1
 #User=gsnet
 Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
-ExecStart=/home/gsnet/usr/bin/gsrnd -p443 -p7350
+ExecStart=/home/gsnet/usr/bin/gsrnd -p22 -p53 -p67 -p443 -p7350
 StandardOutput=journal
 
 [Install]
