@@ -6,7 +6,6 @@ You have been warned...
 
 TODO:
 - document (try the wiki)
-- Make this compatible with gsrn.py
 
 **Installation**
 ```
