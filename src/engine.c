@@ -450,8 +450,8 @@ cb_bev_status(struct bufferevent *bev, short what, void *arg)
 	}
 
 	// Any other error-event is bad (disconnect hard)
-	// FIXME: What error can this be?
-	GS_LOG("ODD-ERROR: [%6u] %c fd=%d, event=%d", p->id, IS_CS(p), p->fd, what);
+	// Broken Pipe, Connection reset by peer
+	// GS_LOG("ODD-ERROR: [%6u] %c fd=%d, event=%d", p->id, IS_CS(p), p->fd, what);
 	PEER_free(p);
 	if (buddy)
 		PEER_free(buddy);
@@ -483,7 +483,6 @@ cb_bev_write(struct bufferevent *bev, void *arg)
 	// completed and reading from this peer's input should continue
 	// (until GS-ACCEPT is received).
 	bufferevent_enable(p->bev, EV_READ);
-
 }
 
 
