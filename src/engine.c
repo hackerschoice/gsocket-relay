@@ -1,13 +1,13 @@
 
 #if 0
-openssl s_client -quiet -connect 127.1:443 </dev/uradnom  >/dev/null
+openssl s_client -quiet -connect 127.1:443 </dev/urandom  >/dev/null
 
 SETUP
 ======
 echo 4096 >/proc/sys/net/core/rmem_default
 echo 8196 >/proc/sys/net/core/wmem_default
 
-DEFAUTLS
+DEFAULTS
 ========
 echo 212992 >/proc/sys/net/core/rmem_default
 echo 212992 >/proc/sys/net/core/wmem_default
@@ -27,6 +27,71 @@ echo 212992 >/proc/sys/net/core/wmem_default
 
 static void cb_bev_relay_read(struct bufferevent *bev, void *arg);
 static void buddy_up(struct _peer *server, struct _peer *client);
+
+extern struct _cli *logstream_cli;
+
+static void
+logstream_msg(struct _cli_logstream *ls, uint8_t opcode, struct _peer *p) {
+	ls->hdr.type = GSRN_CLI_TYPE_LOGSTREAM;
+	ls->opcode = opcode;
+	if (p != NULL)
+		memcpy(&ls->addr, &p->addr, sizeof ls->addr);
+	CLI_msg(logstream_cli, ls, sizeof *ls);
+}
+
+// Send log file to cli (if logstream is enabled)
+static void
+logstream_listen(struct _peer *p, struct _gs_listen *msg) {
+	if (logstream_cli == NULL)
+		return;
+
+	// Log only the _first_ LISTEN: The client immediately establishes another
+	// LISTEN() connection after the first connection. Dont log in.
+	// Get total number of all PEERS of this ADDRESS
+	// Subtract all that are in a BAD state
+	int n;
+	n = p->plr->pl_mgr->n_entries - p->plr->pl_mgr->plr[PEER_L_BAD_AUTH].n_entries;;
+	if (n != 1)
+		return;
+
+	// First ENTRY. Nobody else in ACCEPT or CONNECT state.
+	struct _cli_logstream ls;
+	memcpy(&ls.ipa, &p->addr_in, sizeof ls.ipa);
+	if (msg != NULL)
+		memcpy(&ls.msg, msg, sizeof ls.msg);
+	else
+		memset(&ls.msg, 0, sizeof ls.msg);
+
+	logstream_msg(&ls, GSRN_CLI_OP_LS_LISTEN, p);
+}
+
+
+// #if sizeof (struct _gs_connect) != sizeof (struct _gs_listen)
+// # error "Sizeof _gs_connect and _gs_listen not the same"
+// #endif
+static void
+logstream_connect(struct _peer *p, struct _gs_connect *msg)
+{
+	if (logstream_cli == NULL)
+		return;
+
+	struct _cli_logstream ls;
+	if (p->flags & FL_PEER_IS_SERVER) {
+		memcpy(&ls.ipa, &p->addr_in, sizeof ls.ipa);
+		memcpy(&ls.ipb, &p->buddy->addr_in, sizeof ls.ipb);
+	} else {
+		memcpy(&ls.ipa, &p->buddy->addr_in, sizeof ls.ipa);
+		memcpy(&ls.ipb, &p->addr_in, sizeof ls.ipb);
+	}
+
+	if (msg != NULL)
+		memcpy(&ls.msg, msg, sizeof ls.msg);
+	else
+		memset(&ls.msg, 0, sizeof ls.msg);
+
+	logstream_msg(&ls, GSRN_CLI_OP_LS_CONNECT, p);
+}
+
 
 void
 cb_gsrn_protocol_error(struct evbuffer *eb, size_t len, void *arg)
@@ -77,7 +142,7 @@ gsrn_bad_auth_delay(struct _peer *p)
 }
 
 static int
-gsrn_listen(struct _peer *p, uint8_t *token)
+gsrn_listen(struct _peer *p, uint8_t *token, struct _gs_listen *msg)
 {
 	// Adjust timeout
 	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
@@ -104,9 +169,10 @@ gsrn_listen(struct _peer *p, uint8_t *token)
 		return -1;
 	}
 
+	logstream_listen(p, msg);
+
 	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING, NULL);
-	if (buddy != NULL)
-	{
+	if (buddy != NULL) {
 		// There was a client waiting (-w). Connect immediately.
 		buddy_up(p /*server*/   , buddy /*client*/);
 	}
@@ -153,7 +219,7 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 	}
 	GS_LOG_V("[%6u] %32s LISTEN  %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
-	if (gsrn_listen(p, msg.token) != 0)
+	if (gsrn_listen(p, msg.token, &msg) != 0)
 		goto err;
 
 	// HERE: Can be SUCCESS or delayed BAD-AUTH.
@@ -227,7 +293,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 			// HERE: peer is allowed to become a server
 			// -A flag. When no server listening. 
 			DEBUGF_G("CONNECT but becoming a listening server instead (-A is set)\n");
-			if (gsrn_listen(p, NULL) != 0)
+			if (gsrn_listen(p, NULL, NULL /*&msg*/) != 0)
 				goto err;
 
 			// HERE: Can be SUCCESS or delayed BAD-AUTH.
@@ -276,6 +342,8 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 	buddy_up(buddy /*server*/, p /*client*/);
 
 	DEBUGF_Y("%c connect received\n", IS_CS(p));
+	logstream_connect(p, &msg);
+
 
 	return;
 err:

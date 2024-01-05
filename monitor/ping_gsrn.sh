@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /usr/bin/env bash
 
 BASEDIR="$(cd "$(dirname "${0}")" || exit; pwd)"
 source "${BASEDIR}/funcs"
@@ -19,14 +19,15 @@ gsrn_ping()
 	M=31337000000
 
 	(sleep 1; for x in $(seq 1 3); do $date_bin +%s%N; sleep 0.5; done) | gs-netcat -s "$SECRET" -w -q| while read -r x; do
-		! [[ $x =~ ^16 ]] && continue
+		! [[ $x =~ ^17 ]] && continue
 
 		D=$(($($date_bin +%s%N) - x))
 		M=$(MIN $M $D)
+
 		echo "$M" >"$VARBACK"
 	done
 	D=$(cat "$VARBACK")
-	rm -f "$VARBACK"
+	rm -f "${VARBACK:?}"
 	printf "MIN %s %.3fms\n" "$1" "$(echo "$D"/1000000 | bc -l)"
 
 	kill "$GSPID"

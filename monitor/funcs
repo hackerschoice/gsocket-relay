@@ -32,3 +32,4 @@ XMD5() { md5sum "${1}" 2>/dev/null | cut -f1 -d' '; }
 # Otherwise use hosts from command line arguments.
 [[ -z $HOSTS ]] && HOSTS=(${@})
 [[ -z $HOSTS ]] && { echo -e "$(basename "${0}") [gsrn-hostname] ..."; exit 255; }
+:

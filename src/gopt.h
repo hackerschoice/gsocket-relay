@@ -34,6 +34,7 @@ struct _gopt
 	struct _port_listhead ports_cli_head;
 
 	int verbosity;
+	uint32_t flags;
 	struct event_base *evb;      // libevent base
 	// struct event *ev_listen;      // Listening socket event
 	// struct event *ev_listen_ssl;  // Listening socket event
@@ -48,7 +49,7 @@ struct _gopt
 	// CLI output buffer
 	struct evbuffer *cli_out_evb;
 };
-
+#define GSR_FL_LOGSTREAM     (0x01)
 
 // Server (daemon) globals
 struct _gd

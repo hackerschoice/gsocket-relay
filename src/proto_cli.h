@@ -80,6 +80,7 @@ struct _cli_set
 #define GSRN_CLI_OP_SET_LOG_IP         (0x02)
 #define GSRN_CLI_OP_SET_PORT_CLI       (0x03)
 #define GSRN_CLI_OP_SET_LOG_VERBOSITY  (0x04)
+#define GSRN_CLI_OP_SET_LOGSTREAM      (0x05)  // option: -l
 
 struct _cli_stats
 {
@@ -88,6 +89,26 @@ struct _cli_stats
 	uint8_t flags;
 } __attribute__((__packed__));
 #define GSRN_CLI_OP_STATS_RESET        (0x01)
+
+struct _cli_logstream
+{
+	struct _cli_hdr_fixed hdr;
+	uint8_t opcode;
+	uint128_t addr;
+	struct sockaddr_in ipa;
+	struct sockaddr_in ipb;
+	// union {
+	// 	struct {
+	// 		uint8_t token[GS_TOKEN_SIZE];
+	// 	} listen;
+	// 	struct {
+	// 		uint8_t data[GS_TOKEN_SIZE];
+	// 	} raw;
+	// };
+	uint8_t msg[sizeof (struct _gs_listen)];
+} __attribute__((__packed__));
+#define GSRN_CLI_OP_LS_LISTEN          (0x01)
+#define GSRN_CLI_OP_LS_CONNECT         (0x02)
 
 ///////////// CLI responses
 
@@ -153,7 +174,7 @@ struct _cli_stats_r
 
 ///////////// CLI TYPE definitions
 #define GSRN_CLI_TYPE_LIST_RESPONSE   (0x01)  // s2c - response (to list request)
-#define GSRN_CLI_TYPE_LOG             (0x02)  // s2c - log message
+#define GSRN_CLI_TYPE_LOGSTREAM       (0x02)  // s2c - log message
 #define GSRN_CLI_TYPE_MSG             (0x04)  // s2c - message (to display)
 #define GSRN_CLI_TYPE_STATS_RESPONSE  (0x09)  // s2c - stats response
 

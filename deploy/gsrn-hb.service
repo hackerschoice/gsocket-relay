@@ -12,9 +12,9 @@ Restart=always
 RestartSec=60
 #Need root for port 443
 User=gsnet
-Environment="LD_LIBRARY_PATH=/home/gsnet/usr/lib"
-Environment="PATH=/home/gsnet/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/home/gsnet/usr/bin/heartbeat.sh
+Environment="LD_LIBRARY_PATH=/sec/usr/lib"
+Environment="PATH=/sec/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/sec/usr/bin/heartbeat.sh
 StandardOutput=journal
 
 [Install]

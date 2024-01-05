@@ -2,10 +2,10 @@
 
 [[ $BASH_VERSION == "3."* ]] && { echo >&2 "BASH to old (${BASH_VERSION}). Try /usr/local/bin/bash ${0}."; exit 255; }
 # Test if all servers are alive and functional
-INTERVAL=60 # Check all servers every n seconds
+INTERVAL=160 # Check all servers every n seconds
 
 BASEDIR="$(cd "$(dirname "${0}")" || exit; pwd)"
-source "${BASEDIR}/funcs"
+source "${BASEDIR}/funcs" || exit
 [[ -f "${BASEDIR}/.env" ]] && source "${BASEDIR}/.env"
 
 command -v gs-netcat >/dev/null || ERREXIT 254 "Not found: gs-netcat"
@@ -28,7 +28,7 @@ waitkp()
 	local rounds
 	# How many seconds the test should take
 	local sleep_wd
-	sleep_wd=5
+	sleep_wd=15
 
 	x=0
 	rounds=$((sleep_wd * 2))
@@ -46,8 +46,9 @@ waitkp()
 tg_msg()
 {
 	local str
+	[[ -z "$TG_TOKEN" ]] && return
 
-	str=$(curl -fLSs --data-urlencode "text=\[$(date '+%F %T' -u)]\[${MYNAME}] $*" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHATID}&parse_mode=Markdown" | jq '.ok')
+	str=$(curl -fLSs --retry 3 --max-time 15 --data-urlencode "text=\[$(date '+%F %T' -u)]\[${MYNAME:-GS}] $*" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHATID}&parse_mode=Markdown" | jq '.ok')
 	[[ $str != "true" ]] && ERREXIT 249 "Telegram API failed...."
 	return 0
 }

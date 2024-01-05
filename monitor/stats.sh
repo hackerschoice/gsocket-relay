@@ -9,7 +9,7 @@ unset GSOCKET_IP
 
 for h in "${HOSTS[@]}"; do
 	echo "=====${h}====="
-	ssh -p 64222 gsnet@"${h}" '(echo -e "stats\nlist cli"; sleep 1) | usr/bin/gsrn_cli'
+	ssh "${SSH_ARGS[@]}" -p 64222 gsnet@"${h}" '(echo -e "stats\nlist cli"; sleep 1) | usr/bin/gsrn_cli'
 done
 
 

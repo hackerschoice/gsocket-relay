@@ -14,6 +14,7 @@ struct _cli
 };
 
 #define FL_CLI_IS_CONNECTED    (0x01)
+#define FL_CLI_IS_LOGSTREAM    (0x02)
 
 struct _cli *CLI_new(int fd, SSL *ssl, int is_server);
 void CLI_free(struct _cli *c);

@@ -150,7 +150,7 @@ dispatch(char *l, char *end, struct dp *d, int n)
 	if (end - l <= 0)
 		return;
 
-	// Example: 'lis serv more optinos here'
+	// Example: 'lis serv more options here'
 	char *opt = strchr(l, ' ');
 	if (opt != NULL)
 	{
@@ -350,7 +350,7 @@ cmd_kill(char *opt, char *end)
 	struct _cli_kill msg;
 
 	memset(&msg, 0, sizeof msg);
-	// STOP HERE: converting to strx128 deadbeef and back does not always give 16 char hex string (which it shoudl!)
+	// STOP HERE: converting to strx128 deadbeef and back does not always give 16 char hex string (which it should!)
 	// and also could implement 'kill address id'
 	msg.hdr.type = GSRN_CLI_TYPE_KILL;
 	if (end - opt <= 10)
@@ -465,12 +465,67 @@ cb_read_stdin(int fd, short what, void *arg)
 	}
 }
 
-static void
-cb_cli_log(struct evbuffer *eb, size_t len, void *arg)
-{
-	// struct _cli *c = (struct _cli *)arg;
+// Remove trailing zeros from message.
+static size_t
+ls_trim_msg(void *ptr, size_t len) {
+	uint8_t *msg = (uint8_t *)ptr;
+	uint8_t *end = (uint8_t *)msg + len;
+	while (end > msg && *(end - 1) == '\0')
+		end--;
+	
+	return end - msg;
+}
 
-	DEBUGF("Received a log message from gsrnd.\n");
+static void
+ls_listen_print(struct _cli_logstream *ls) {
+	struct _gs_listen *msg = (struct _gs_listen *)ls->msg;
+	char hex[sizeof *msg * 2 + 1];
+	char *str = NULL;
+
+	if (gopt.verbosity > 0)
+		str = GS_bin2hex(hex, sizeof hex, msg, ls_trim_msg(msg, sizeof *msg));
+	printf("LISTEN %32s %s:%u [%s]\n", GS_addr128hex(NULL, ls->addr), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
+}
+
+static void
+ls_connect_print(struct _cli_logstream *ls) {
+	struct _gs_connect *msg = (struct _gs_connect *)ls->msg;
+	char hex[sizeof *msg * 2 + 1];
+	char ipstr[64];
+	char *str = NULL;
+
+	snprintf(ipstr, sizeof ipstr, "%s", inet_ntoa(ls->ipb.sin_addr));
+	if (gopt.verbosity > 0)
+		str = GS_bin2hex(hex, sizeof hex, msg, ls_trim_msg(msg, sizeof *msg));
+	printf("CONNECT %32s %s:%u -> %s:%u [%s]\n", GS_addr128hex(NULL, ls->addr), ipstr, ntohs(ls->ipb.sin_port), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
+}
+
+static void
+cb_cli_logstream(struct evbuffer *eb, size_t len, void *arg)
+{
+	struct _cli_logstream msg;
+
+	evbuffer_remove(eb, &msg, sizeof msg);
+	if (msg.opcode == GSRN_CLI_OP_LS_LISTEN)
+		ls_listen_print(&msg);
+	else if (msg.opcode == GSRN_CLI_OP_LS_CONNECT)
+		ls_connect_print(&msg);
+	else
+		printf("Unknown LOGSTREAM message (opcode=%u)\n", msg.opcode);
+#if 0
+	struct _cli_msg msg;
+	char buf[len - sizeof msg + 1];
+
+	evbuffer_remove(eb, &msg, GSRN_CLI_HDR_TLV_SIZE);
+	evbuffer_remove(eb, buf, len - GSRN_CLI_HDR_TLV_SIZE);
+	buf[sizeof buf - 1] = '\0';
+
+	// An empty string triggers just the prompt but no output or \n
+	if (buf[0] == '\0')
+		return;
+
+	printf("%s\n", buf);
+#endif
 }
 
 static void
@@ -558,7 +613,7 @@ cb_cli_stats_r(struct evbuffer *eb, size_t len, void *arg)
 	print_prompt();
 }
 
-// Variable legnth
+// Variable length
 static void
 cb_cli_msg(struct evbuffer *eb, size_t len, void *arg)
 {
@@ -572,6 +627,9 @@ cb_cli_msg(struct evbuffer *eb, size_t len, void *arg)
 	// An empty string triggers just the prompt but no output or \n
 	if (buf[0] != '\0')
 		printf("%s\n", buf);
+
+	if (gopt.flags & GSR_FL_LOGSTREAM)
+		return;
 
 	print_prompt();
 }
@@ -589,14 +647,21 @@ init_engine(void)
 	g_cli = CLI_new(-1, NULL, 0 /*is_server*/);
 	bufferevent_socket_connect(g_cli->bev, (struct sockaddr *)&addr, sizeof addr);
 
-	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LOG, 0 /*variable lenght*/, cb_cli_log, g_cli);
-	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LIST_RESPONSE, sizeof (struct _cli_list_r), cb_cli_list_r, g_cli);
+	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LOGSTREAM, sizeof (struct _cli_logstream), cb_cli_logstream, g_cli);
 	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_MSG, 0 /*variable length*/, cb_cli_msg, g_cli);
+	// Logstream reads no STDIN
+	if (gopt.flags & GSR_FL_LOGSTREAM) {
+		cmd_set_msg(GSRN_CLI_OP_SET_LOGSTREAM, 1, 0, 0, 0);
+		return;
+	}
+
+	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LIST_RESPONSE, sizeof (struct _cli_list_r), cb_cli_list_r, g_cli);
 	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_STATS_RESPONSE, sizeof (struct _cli_stats_r), cb_cli_stats_r, g_cli);
 
 	g_evb = evbuffer_new();
 	g_ev_stdin = event_new(gopt.evb, STDIN_FILENO, EV_READ | EV_PERSIST, cb_read_stdin, NULL);
 	event_add(g_ev_stdin, NULL);
+
 
 	print_prompt();
 }

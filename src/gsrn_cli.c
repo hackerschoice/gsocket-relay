@@ -1,7 +1,7 @@
 #include "common.h"
 #include "gopt.h"
 
-
+// struct _gc gc;
 
 static void
 usage_cli(char *err)
@@ -26,7 +26,7 @@ do_getopt_cli(int argc, char *argv[])
 	int c;
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "p:i:v")) != -1)
+	while ((c = getopt(argc, argv, "p:i:vl")) != -1)
 	{
 		switch (c)
 		{
@@ -39,10 +39,12 @@ do_getopt_cli(int argc, char *argv[])
 			case 'v':
 				gopt.verbosity += 1;
 				break;
+			case 'l':
+				gopt.flags |= GSR_FL_LOGSTREAM;
+				break;
 			default:
 				usage_cli("Wrong parameter\n");
 		}
-
 	}
 }
 

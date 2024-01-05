@@ -3,6 +3,9 @@
 #include "cli.h"
 #include "gopt.h"
 
+// Only used by server (not cli)
+struct _cli *logstream_cli;
+
 struct _cli *
 CLI_new(int fd, SSL *ssl, int is_server)
 {

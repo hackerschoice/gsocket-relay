@@ -9,6 +9,7 @@
 #include "gopt.h"
 
 struct _gstats gstats;
+extern struct _cli *logstream_cli;
 
 struct _cli_list_param
 {
@@ -46,6 +47,9 @@ cb_bev_status_cli(struct bufferevent *bev, short what, void *arg)
 		// if (!(c->flags & FL_CLI_IS_CONNECTED))
 		// else
 	}
+
+	if (c == logstream_cli)
+		logstream_cli = NULL;
 
 	CLI_free(c);
 }
@@ -391,6 +395,14 @@ cb_cli_set(struct evbuffer *eb, size_t len, void *arg)
 		PORTSQ_listen(&gopt.ports_cli_head, gopt.ip_cli, 0 /*not used*/, cb_accept_cli);
 
 		CLI_printf(c, "CLI listening on port %u", msg.port);
+		return;
+	}
+
+	if (msg.opcode == GSRN_CLI_OP_SET_LOGSTREAM) {
+		DEBUGF("LOGSTREAM SET\n");
+		c->flags |= FL_CLI_IS_LOGSTREAM;
+		gd.is_log_ip = 1;
+		logstream_cli = c;
 		return;
 	}
 

@@ -172,7 +172,7 @@
 
 extern struct _gopt gopt; // declared in utils.c
 extern struct _gd gd;
-extern struct _gcli gcli;
+// extern struct _gcli gcli;
 extern struct _gstats gstats; // declared in engine_server.c
 
 #define xfprintf(fp, a...) do {if (fp != NULL) { fprintf(fp, a); fflush(fp); } } while (0)
