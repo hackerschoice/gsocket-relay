@@ -53,7 +53,10 @@ echo 1048576 >/proc/sys/net/ipv4/tcp_max_syn_backlog
 modprobe nf_conntrack
 echo 1048576 >/proc/sys/net/netfilter/nf_conntrack_max
 ipt -A INPUT -p tcp --dport 64222 --syn -m connlimit --connlimit-above 8 -j REJECT --reject-with tcp-reset
-#ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 2048 -j DROP
+# Some bad deployments (early verion) start hundrets of gsnc -l. The gsrnd puts those into
+# BAD-AUTH queue to stop them from flooding the server with SYN. On IPT -j DROP
+# the client will wait 130 seconds before giving up.
+# ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 2048 -j DROP
 ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 1024 -j DROP
 
 # See https://www.frozentux.net/ipsysctl-tutorial/chunkyhtml/tcpvariables.html

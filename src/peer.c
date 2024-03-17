@@ -16,13 +16,14 @@ static void peer_stats_update_bps(struct _peer *p);
 static void
 tree_stats(void)
 {
+#if 0
 	int i;
-
 	DEBUGF("Tree Stats (%d nodes)\n", gopt.t_peers.n_nodes);
 	for (i = 0; i < MAX_LISTS_BY_ADDR; i++)
 	{
 		DEBUGF("LIST-ID=#%d(%s)  Entries=%d  Unique=%d\n", i, PEER_L_name(i), gopt.t_peers.n_entries[i], gopt.t_peers.n_uniq[i]);
 	}
+#endif
 }
 
 static void
@@ -126,18 +127,19 @@ cb_t_peer_find(const void *needle_a, const void *stack_b)
 static int
 pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 {
-	static uint8_t token_zero[GS_TOKEN_SIZE];
+	static uint8_t token_zero[GS_TOKEN_SIZE]; // ZERO
 	struct _peer_l_root *plr = &pl_mgr->plr[pl_id];
 
 	if (pl_id == PEER_L_LISTENING)
 	{
+		// DEBUGF_C("[%6u] LISTEN TOKEN=%s\n", p->id, GS_token2hex(NULL, token));
 		if (pl_mgr->flags & FL_PL_IS_TOKEN_SET)
 		{
 			// HERE: Token is set. Check token from peer.
 			if ((token == NULL) || (memcmp(pl_mgr->token, token, sizeof pl_mgr->token) != 0))
 			{
 				char hextoken[GS_TOKEN_SIZE * 2 + 1];
-				GS_LOG_V("[%6u] %32s BAD AUTH TOKEN (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
+				GS_LOG_V("[%6u] %32s "CDR"BAD AUTH TOKEN"CN" (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
 				return -1; // Bad Token
 			}
 			evtimer_del(pl_mgr->evt_linger);
@@ -256,7 +258,7 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 	if (pl_mgr == NULL)
 	{
 		// HERE: New leaf in binary tree
-		DEBUGF("Creating a new linked list. (list-mgr=%p, list=%d) tree=%p\n", pl_mgr, pl_id, gopt.t_peers.tree);
+		DEBUGF("{fd=%d} Creating a new linked list. (list-mgr=%p, list=%d) tree=%p\n", p->fd, pl_mgr, pl_id, gopt.t_peers.tree);
 
 		pl_mgr = calloc(1, sizeof (struct _peer_l_mgr));
 		pl_mgr->addr = p->addr;
@@ -273,7 +275,8 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 		gopt.t_peers.n_nodes += 1;
 	} else {
 		// HERE: Existing linked list (peer with same addr already exists)
-		DEBUGF_W("Using existing list-mgr=%p. Already has %d entries\n", pl_mgr, pl_mgr->n_entries);
+		struct _peer_l_root *plr = &pl_mgr->plr[pl_id];
+		DEBUGF_W("{fd=%d} Using existing list-mgr=%p. Already has %d entries, [pl_id=%d] has %d\n", p->fd, pl_mgr, pl_mgr->n_entries, pl_id, plr->n_entries);
 	}
 	int ret;
 	ret = pl_link(pl_mgr, p, pl_id, token);
@@ -413,7 +416,7 @@ cb_evt_linger(int fd_notused, short event, void *arg)
 		return;
 	}
 
-	DEBUGF_C("[%6u] %c fd=%d Sending CLOSE from BAD-AUTH queue\n", p->id, IS_CS(p), p->fd);
+	DEBUGF_C("[%6u] %c {fd=%d} Sending CLOSE to _one_ peer waiting in BAD-AUTH queue (total in BAD_AUTH: %d)\n", p->id, IS_CS(p), p->fd, plr->n_entries);
 	// FIXME: Could we move it from BAD-AUTH to listen instead?
 	GSRN_send_status_fatal(p, GS_STATUS_CODE_BAD_AUTH, NULL);
 	PEER_goodbye(p);
@@ -440,7 +443,7 @@ cb_evt_shortwait(int fd_notused, short event, void *arg)
 	if (plr->n_entries <= 0)
 		return;
 
-	DEBUGF_W("addr=%s Timeout(%d sec). No server connected. Disconnecting %d clients\n", strx128x(pl_mgr->addr), GSRN_SHORTWAIT_TIMEOUT, plr->n_entries);
+	DEBUGF_W("addr=%s Timeout(%d sec). No server connected. %d clients in PEER_L_WAITING.\n", strx128x(pl_mgr->addr), GSRN_SHORTWAIT_TIMEOUT, plr->n_entries);
 
 	struct _peer *p;
 	struct _peer *temp_p = NULL;
@@ -481,11 +484,19 @@ done:
 static void
 peer_sys_shutdown(struct _peer *p)
 {
+	if (p == NULL)
+		goto err;
+	if (p->shutdown_complete_func == NULL)
+		goto err;
 	DEBUGF("sys.shutdown(%d, SHUT_WR)\n", p->fd);
 	shutdown(p->fd, SHUT_WR);
+	p->flags &= ~FL_PEER_IS_WANT_SEND_SHUT_WR;
 	p->flags |= FL_PEER_IS_SHUT_WR_SENT;
-	XEVT_FREE(p->evt_shutdown_timeout);
+	// Always calls cb_shutdown_complete()
 	(*p->shutdown_complete_func)(p);
+	return;
+err:
+	DEBUGF_R("CANT HAPPEN (peer=%p)\n", p);
 }
 
 static int
@@ -539,7 +550,7 @@ cb_evt_tioc(int fd, short what, void *arg)
 		return;
 	}
 
-	XEVT_FREE(p->evt_tioc);
+	// XEVT_FREE(p->evt_tioc); // Not needed. FIXME-2024
 	peer_sys_shutdown(p);
 }
 
@@ -558,6 +569,8 @@ cb_evt_shutdown_timeout(int fd, short what, void *arg)
 void
 PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 {
+	// func is only ever NULL when EV_WRITE is triggered and there is no
+	// data in the output buffer.
 	if (func != NULL)
 	{
 		p->shutdown_complete_func = func;
@@ -566,7 +579,12 @@ PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 		if (out_sz > 0)
 		{
 			DEBUGF_R("[%6u] DELAYING SHUT_WR fd=%d (%c) because %zd left in output buffer\n", p->id, p->fd, IS_CS(p), out_sz);
+			// Make cb_bev_write() call PEER_shutdown(p) when data got written.
 			p->flags |= FL_PEER_IS_WANT_SEND_SHUT_WR;
+			// Set a timeout if we fail to write all data.
+			if (p->evt_shutdown_timeout == NULL)
+				p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
+			evtimer_add(p->evt_shutdown_timeout, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT * 4) /*seconds*/);
 			return;
 		}
 	}
@@ -588,7 +606,8 @@ PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 		// Kernel buffer may never free (for example when peer has stopped reading).
 		// Thus we force call to 'shutdown()' even if there is data left in
 		// the output kernel buffer.
-		p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
+		if (p->evt_shutdown_timeout == NULL)
+			p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
 		evtimer_add(p->evt_shutdown_timeout, TVSEC(3) /*seconds*/);
 
 		return;
@@ -604,7 +623,7 @@ PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 void
 PEER_goodbye(struct _peer *p)
 {
-	DEBUGF_G("[%6u] %c PEER-GOODBYE\n", p->id, IS_CS(p));
+	DEBUGF_G("[%6u] {fd=%d} %c PEER-GOODBYE\n", p->id, p->fd, IS_CS(p));
 	// Remove myself from lists. No longer available to any GSRN services (e.g. gs-connect())
 	peer_t_del(p);
 
@@ -613,7 +632,7 @@ PEER_goodbye(struct _peer *p)
 	PKT_set_void(&p->pkt);
 }
 
-// Free a peer and also free its buddy if is_free_buddy is set.
+// Free a peer
 void
 PEER_free(struct _peer *p)
 {
@@ -778,7 +797,7 @@ PEER_new(int fd, SSL *ssl)
 
 	socklen_t slen = sizeof (struct sockaddr_in);
 	getpeername(fd, (struct sockaddr *)&p->addr_in, &slen);
-	DEBUGF_B("peer=%p fd=%d ip=%s:%u\n", p, fd, int_ntoa(p->addr_in.sin_addr.s_addr), ntohs(p->addr_in.sin_port));
+	DEBUGF_B("[%6u] peer=%p fd=%d ip=%s:%u\n", p->id, p, fd, int_ntoa(p->addr_in.sin_addr.s_addr), ntohs(p->addr_in.sin_port));
 
 	int ev_opt = BEV_OPT_DEFER_CALLBACKS;
 	if (ssl != NULL)

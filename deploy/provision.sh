@@ -32,11 +32,14 @@ mkdir -p /home/gsnet/usr/bin /home/gsnet/src
 # For gsrn-hb also add all servers to /etc/hosts
 
 exit 0
-ln -s gsocket-1.4.40 gsocket
-cd gsocket-relay-1.0.11
+cd /sec/src
+VER="1.4.42dev2"
+tar xfvz "gsocket-${VER}.tar.gz"
+ln -s "gsocket-${VER}" gsocket
+cd gsocket-relay-1.0.12
 ln -s ../gsocket gsocket
 (cd gsocket && ./configure && make)
-./configure --prefix=/home/gsnet/usr && make install
+./configure --prefix=/sec/usr && make install
 cp deploy/gsrnd.service /etc/systemd/system
 systemctl enable gsrnd
 systemctl start gsrnd && systemctl status gsrnd

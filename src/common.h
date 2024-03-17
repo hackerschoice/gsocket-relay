@@ -81,6 +81,21 @@
 // gsocket
 #include <gsocket/gsocket.h>
 
+#define CDR        "\033[0;31m"
+#define CDG        "\033[0;32m"
+#define CDY        "\033[0;33m"
+#define CDB        "\033[0;34m"
+#define CDM        "\033[0;35m"
+#define CDC        "\033[0;36m"
+#define CR         "\033[1;31m"
+#define CG         "\033[1;32m"
+#define CY         "\033[1;33m"
+#define CN         "\033[0m"
+#define CB         "\033[1;34m"
+#define CM         "\033[1;35m"
+#define CC         "\033[1;36m"
+#define CW         "\033[1;37m"
+
 #ifdef __sun
 # ifdef HAVE_OPEN64
 #  define IS_SOL10      1   // Solaris 10

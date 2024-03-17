@@ -4,7 +4,8 @@
 
 // Seconds to wait for first GSRN message
 #define GSRN_1STMSG_TIMEOUT         (5)
-#define GSRN_MSG_TIMEOUT            (GSRN_DEFAULT_PING_INTERVAL + 10)
+// up to 1.3.38 use 60*2 and thereafter 45
+#define GSRN_MSG_TIMEOUT            (MAX(60*2, GSRN_DEFAULT_PING_INTERVAL) + 10)
 #define GSRN_FLUSH_TV_TIMEOUT       (3)
 // Seconds to wait for ACCEPT after START was send in buddy_up()
 #define GSRN_ACCEPT_TIMEOUT         (5)
@@ -18,11 +19,11 @@
 // Delay BAD_AUTH error by DELAY+random(JITTER) if 2 or more BAD_AUTH within
 // BAD_AUTH_WINDOW happen. This happens when user starts 'gs-nc -l' multiple
 // times and using the same GS_SECRET.
-#define GSRN_BAD_AUTH_WINDOW        (180)
-#define GSRN_BAD_AUTH_DELAY         (120)  // Wait DELAY+JITTER seconds before returning BAD-AUTH
+#define GSRN_BAD_AUTH_WINDOW        (15)
+#define GSRN_BAD_AUTH_DELAY         (240)  // Wait DELAY+JITTER seconds before returning BAD-AUTH
 #define GSRN_BAD_AUTH_JITTER        (10)
 
-// Keep at least 10 FD's as reseve so if we run out of FD's that
+// Keep at least 10 FD's as reserved so if we run out of FD's that
 // CLI can still connect
 #define GSRN_FD_RESERVE             (10)
 
