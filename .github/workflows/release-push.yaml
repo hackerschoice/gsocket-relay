@@ -5,43 +5,94 @@ permissions:
   contents: write
 
 env:
-  # VER: latest
   TAG: v1.0.15a
 
+# jobs:
+#   Linux-Cross:
+#     strategy:
+#       matrix:
+#         arch: [x86_64, aarch64]
+#           - arch: x86_64
+#             cc: x86_64-linux-musl
+#             ssl: linux-generic64
+#           - arch: aarch64
+#             cc: aarch64-linux-musl
+#             ssl: linux-generic64
+#     runs-on: ubuntu-latest
+#     container:
+#       image: muslcc/x86_64:${{ matrix.arch }}-linux-musl
+#     steps:
+#       - uses: actions/checkout@v3
+
+#       - name: Add build dependencies
+#         run: |
+#           apk add --update --no-cache --no-progress git autoconf automake bash make curl libevent-dev
+
+#       - name: Cache SSL
+#         id: cachessl
+#         uses: actions/cache@v3
+#         with:
+#           path: /opt
+#           key: ${{ matrix.arch }}-ssl
+
+#       - name: Generate OpenSSL
+#         if: steps.cachessl.outputs.cache-hit != 'true'
+#         run: |
+#           curl -SsfL https://www.openssl.org/source/openssl-${OPENSSL_VER:-1.1.1w}.tar.gz | tar -xzf - -C /tmp/
+#           ( cd /tmp/openssl-${OPENSSL_VER:-1.1.1w} && \
+#           ./Configure --prefix=/opt no-tests no-dso no-threads no-shared ${{ matrix.ssl }} && \
+#           make install_sw )
+#           rm -rf rm -rf /tmp/openssl-${OPENSSL_VER:-1.1.1w} /opt/bin/openssl /opt/bin/c_rehash
+
+#       - name: SaveCache
+#         if: steps.cachessl.outputs.cache-hit != 'true'
+#         uses: actions/cache/save@v3
+#         with:
+#           path: /opt
+#           key: ${{ matrix.arch }}-ssl
+
+#       - name: Adding gsocket
+#         run: |
+#           git clone --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
+#           cd gsocket
+#           ./bootstrap
+#           ./configure --prefix=/opt --enable-realprefix=/usr --enable-static --host=${{ matrix.arch }}
+#### THIS FAILS BECAUSE MUSLCC container's libevent does not come with libevent_openssl
+#           make all
+
 jobs:
-  Linux-Cross:
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
+  Build:
     runs-on: ubuntu-latest
-    container:
-      image: muslcc/x86_64:${{ matrix.arch }}-linux-musl
     steps:
       - uses: actions/checkout@v3
+
+      - name: Setup Alpine x86_64
+        uses: jirutka/setup-alpine@v1
+      
       - name: Add build dependencies
         run: |
-          apk add --update --no-cache --no-progress git make automake autoconf gcc libevent-dev openssl-dev
+          apk add --update --no-cache --no-progress git gcc autoconf automake bash make curl libc-dev libevent-dev openssl-dev bsd-compat-headers
 
-      - name: Adding gsocket
+      - name: Add gsocket
         run: |
-          git clone --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
+          git clone -b beta --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
           cd gsocket
           ./bootstrap
-          ./configure
-          make
+          ./configure --prefix=/opt --enable-realprefix=/usr
+          make all
 
-      - name: Compiling-${{ matrix.arch }}
+      - name: Compiling GSRN
         run: |
           ./bootstrap
-          ./configure --enable-static
-          mv src/gsrnd gsrnd-linux-${{ matrix.arch }}
-          mv src/gsrn_cli gsrn_cli-linux-${{ matrix.arch }}
+          ./configure --prefix=/opt --enable-static
+          make
+          mv src/gsrnd gsrnd-linux-x86_64
+          mv src/gsrn_cli gsrn_cli-linux-x86_64
 
       - name: Upload to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: gsrn*-linux-${{ matrix.arch }}
+          file: gsrn*-linux-x86_64
           overwrite: true
-          # tag: ${{ env.TAG }}
