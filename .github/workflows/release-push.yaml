@@ -15,6 +15,7 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, aarch64]
+        include:
           - arch: x86_64
             cc: x86_64-linux-musl
             ssl: linux-generic64
