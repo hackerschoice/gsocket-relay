@@ -30,16 +30,16 @@ jobs:
 
       - name: Add build dependencies
         run: |
-          apk add --update --no-cache --no-progress git autoconf automake make curl bsd-compat-headers
+          apk add --update --no-cache --no-progress git autoconf automake make curl bsd-compat-headers file
 
-      - name: Cache SSL
+      - name: Cache SSL + LibEvent
         id: cachessl
         uses: actions/cache@v3
         with:
           path: /opt
           key: ${{ matrix.arch }}-ssl
 
-      - name: Generate OpenSSL
+      - name: Generate OpenSSL + Libevent
         if: steps.cachessl.outputs.cache-hit != 'true'
         run: |
           curl -SsfL https://www.openssl.org/source/openssl-${OPENSSL_VER:-1.1.1w}.tar.gz | tar -xzf - -C /tmp/
@@ -69,10 +69,10 @@ jobs:
 
       - name: Compiling GSRN
         run: |
-          pwd
           ./bootstrap
           LDFLAGS="-L/opt/lib" LIBS="-lssl -lcrypto" ./configure --prefix=/opt --enable-static --host=${{ matrix.arch }}
           make
+          file src/gsrnd
           mv src/gsrnd gsrnd-linux-${{ matrix.arch }}
           mv src/gsrn_cli gsrn_cli-linux-${{ matrix.arch }}
 
