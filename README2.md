@@ -9,6 +9,7 @@ TODO:
 
 **Installation**
 ```
+$ sudo apt install make automake autoconf gcc libevent-dev libssl-dev
 $ git clone --depth 1 https://github.com/hackerschoice/gsocket-relay.git
 $ cd gsocket-relay
 $ git clone --depth 1 https://github.com/hackerschoice/gsocket
