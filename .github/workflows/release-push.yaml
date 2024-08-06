@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Add build dependencies
         run: |
-          apk add --update --no-cache --no-progress git make automake autoconf gcc libevent-dev libssl-dev
+          apk add --update --no-cache --no-progress git make automake autoconf gcc libevent-dev openssl-dev
 
       - name: Adding gsocket
         run: |
