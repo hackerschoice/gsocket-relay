@@ -18,8 +18,8 @@ systemctl restart systemd-journald
 sed 's/.*Port 22$/Port 64222/' -i /etc/ssh/sshd_config
 systemctl restart sshd
 
-useradd gsnet
-mkdir -p /home/gsnet/usr/bin /home/gsnet/src
+#useradd gsnet
+#mkdir -p /home/gsnet/usr/bin /home/gsnet/src
 # chown gsnet:gsnet /home/gsnet
 
 [[ -L /etc/resolv.conf ]] && {
@@ -32,14 +32,23 @@ mkdir -p /home/gsnet/usr/bin /home/gsnet/src
 # For gsrn-hb also add all servers to /etc/hosts
 
 exit 0
+VER=1.4.42beta2
+RVER=1.0.14
+
 cd /sec/src
-VER="1.4.42dev2"
-tar xfvz "gsocket-${VER}.tar.gz"
-ln -s "gsocket-${VER}" gsocket
-cd gsocket-relay-1.0.12
+tar xfvz gsocket-${VER}.tar.gz
+cd gsocket-${VER}
+./configure --prefix=/sec/usr \
+&& make 
+
+cd /sec/src
+ln -s gsocket-${VER} gsocket
+tar xfvz gsocket-relay-${RVER:?}.tar.gz
+cd gsocket-relay-${RVER:?}
 ln -s ../gsocket gsocket
-(cd gsocket && ./configure && make)
-./configure --prefix=/sec/usr && make install
+./configure --prefix=/sec/usr \
+&& make install
+
 cp deploy/gsrnd.service /etc/systemd/system
 systemctl enable gsrnd
 systemctl start gsrnd && systemctl status gsrnd

@@ -5,7 +5,8 @@ permissions:
   contents: write
 
 env:
-  VER: 1.0.15a
+  # VER: latest
+  TAG: v1.0.15a
 
 jobs:
   Linux-Cross:
@@ -40,7 +41,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: gsrnd-linux-${{ matrix.arch }}
-          file: gsrn_cli-linux-${{ matrix.arch }}
+          file_glob: true
+          file: gsrn*-linux-${{ matrix.arch }}
           overwrite: true
-          tag: v${{ env.VER }}
+          # tag: ${{ env.TAG }}

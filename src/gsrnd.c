@@ -50,6 +50,7 @@ do_getopt(int argc, char *argv[])
 				if (gopt.log_fp == NULL)
 					ERREXIT("fopen(%s): %s\n", optarg, strerror(errno));
 				gopt.err_fp = gopt.log_fp;
+				fprintf(gopt.log_fp, "Log file started.\n");
 				break;
 			case 'p':
 				DEBUGF("Adding port %d\n", atoi(optarg));
