@@ -72,6 +72,7 @@ jobs:
       - name: Add build dependencies
         run: |
           apk add --update --no-cache --no-progress git gcc autoconf automake bash make curl libc-dev libevent-dev openssl-dev bsd-compat-headers
+        shell: alpine.sh --root {0}
 
       - name: Add gsocket
         run: |
@@ -80,6 +81,7 @@ jobs:
           ./bootstrap
           ./configure --prefix=/opt --enable-realprefix=/usr
           make all
+        shell: alpine.sh --root {0}
 
       - name: Compiling GSRN
         run: |
@@ -88,6 +90,7 @@ jobs:
           make
           mv src/gsrnd gsrnd-linux-x86_64
           mv src/gsrn_cli gsrn_cli-linux-x86_64
+        shell: alpine.sh --root {0}
 
       - name: Upload to release
         uses: svenstaro/upload-release-action@v2
