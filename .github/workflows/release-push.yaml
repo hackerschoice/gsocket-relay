@@ -5,99 +5,123 @@ permissions:
   contents: write
 
 env:
+  OPENSSL_VER: 1.1.1w
+  LIBEVENT_VER: 2.1.12-stable
   TAG: v1.0.15a
   # TAG: ${{ github.ref == 'ref/heads/main' && 'latest' || github.ref }}
 
-# jobs:
-#   Linux-Cross:
-#     strategy:
-#       matrix:
-#         arch: [x86_64, aarch64]
-#           - arch: x86_64
-#             cc: x86_64-linux-musl
-#             ssl: linux-generic64
-#           - arch: aarch64
-#             cc: aarch64-linux-musl
-#             ssl: linux-generic64
-#     runs-on: ubuntu-latest
-#     container:
-#       image: muslcc/x86_64:${{ matrix.arch }}-linux-musl
-#     steps:
-#       - uses: actions/checkout@v3
-
-#       - name: Add build dependencies
-#         run: |
-#           apk add --update --no-cache --no-progress git autoconf automake bash make curl libevent-dev
-
-#       - name: Cache SSL
-#         id: cachessl
-#         uses: actions/cache@v3
-#         with:
-#           path: /opt
-#           key: ${{ matrix.arch }}-ssl
-
-#       - name: Generate OpenSSL
-#         if: steps.cachessl.outputs.cache-hit != 'true'
-#         run: |
-#           curl -SsfL https://www.openssl.org/source/openssl-${OPENSSL_VER:-1.1.1w}.tar.gz | tar -xzf - -C /tmp/
-#           ( cd /tmp/openssl-${OPENSSL_VER:-1.1.1w} && \
-#           ./Configure --prefix=/opt no-tests no-dso no-threads no-shared ${{ matrix.ssl }} && \
-#           make install_sw )
-#           rm -rf rm -rf /tmp/openssl-${OPENSSL_VER:-1.1.1w} /opt/bin/openssl /opt/bin/c_rehash
-
-#       - name: SaveCache
-#         if: steps.cachessl.outputs.cache-hit != 'true'
-#         uses: actions/cache/save@v3
-#         with:
-#           path: /opt
-#           key: ${{ matrix.arch }}-ssl
-
-#       - name: Adding gsocket
-#         run: |
-#           git clone --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
-#           cd gsocket
-#           ./bootstrap
-#           ./configure --prefix=/opt --enable-realprefix=/usr --enable-static --host=${{ matrix.arch }}
-#### THIS FAILS BECAUSE MUSLCC container's libevent does not come with libevent_openssl
-#           make all
-
 jobs:
-  Build:
+  Linux-Cross:
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+          - arch: x86_64
+            cc: x86_64-linux-musl
+            ssl: linux-generic64
+          - arch: aarch64
+            cc: aarch64-linux-musl
+            ssl: linux-generic64
     runs-on: ubuntu-latest
+    container:
+      image: muslcc/x86_64:${{ matrix.arch }}-linux-musl
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Alpine x86_64
-        uses: jirutka/setup-alpine@v1
-      
       - name: Add build dependencies
         run: |
-          apk add --update --no-cache --no-progress git gcc autoconf automake bash make curl libc-dev libevent-dev openssl-dev bsd-compat-headers
-        shell: alpine.sh --root {0}
+          apk add --update --no-cache --no-progress git autoconf automake make curl bsd-compat-headers
 
-      - name: Add gsocket
+      - name: Cache SSL
+        id: cachessl
+        uses: actions/cache@v3
+        with:
+          path: /opt
+          key: ${{ matrix.arch }}-ssl
+
+      - name: Generate OpenSSL
+        if: steps.cachessl.outputs.cache-hit != 'true'
+        run: |
+          curl -SsfL https://www.openssl.org/source/openssl-${OPENSSL_VER:-1.1.1w}.tar.gz | tar -xzf - -C /tmp/
+          ( cd /tmp/openssl-${OPENSSL_VER:-1.1.1w} && \
+          ./Configure --prefix=/opt no-tests no-dso no-threads no-shared ${{ matrix.ssl }} && \
+          make install_sw )
+          curl -SsfL https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VER:-2.1.12-stable}/libevent-${LIBEVENT_VER:-2.1.12-stable}.tar.gz | tar -xzf - -C /tmp
+          ( cd /tmp/libevent-${LIBEVENT_VER:-2.1.12-stable} && \
+          PKG_CONFIG_PATH=/opt/lib/pkgconfig CFLAGS="-I/opt/include" LDFLAGS="-L/opt/lib" ./configure --prefix=/opt --enable-static --host=${{ matrix.arch }} && \
+          make install )
+          rm -rf rm -rf /tmp/openssl-${OPENSSL_VER:-1.1.1w} /opt/bin/openssl /opt/bin/c_rehash
+
+      - name: SaveCache
+        if: steps.cachessl.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v3
+        with:
+          path: /opt
+          key: ${{ matrix.arch }}-ssl
+
+      - name: Adding gsocket
         run: |
           git clone -b beta --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
           cd gsocket
           ./bootstrap
-          ./configure --prefix=/opt --enable-realprefix=/usr
+          ./configure --prefix=/opt --enable-realprefix=/usr --enable-static --host=${{ matrix.arch }}
           make all
-        shell: alpine.sh --root {0}
 
       - name: Compiling GSRN
         run: |
+          pwd
           ./bootstrap
-          ./configure --prefix=/opt --enable-static
+          LDFLAGS="-L/opt/lib" LIBS="-lssl -lcrypto" ./configure --prefix=/opt --enable-static --host=${{ matrix.arch }}
           make
-          mv src/gsrnd gsrnd-linux-x86_64
-          mv src/gsrn_cli gsrn_cli-linux-x86_64
-        shell: alpine.sh --root {0}
+          mv src/gsrnd gsrnd-linux-${{ matrix.arch }}
+          mv src/gsrn_cli gsrn_cli-linux-${{ matrix.arch }}
 
       - name: Upload to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: gsrn*-linux-x86_64
+          file: gsrn*-linux-${{ matrix.arch }}
           overwrite: true
           tag: ${{ env.TAG }}
+
+# jobs:
+#   Build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v3
+
+#       - name: Setup Alpine x86_64
+#         uses: jirutka/setup-alpine@v1
+      
+#       - name: Add build dependencies
+#         run: |
+#           apk add --update --no-cache --no-progress git gcc autoconf automake bash make curl libc-dev libevent-dev openssl-dev bsd-compat-headers
+#         shell: alpine.sh --root {0}
+
+#       - name: Add gsocket
+#         run: |
+#           git clone -b beta --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
+#           cd gsocket
+#           ./bootstrap
+#           ./configure --prefix=/opt --enable-realprefix=/usr
+#           make all
+#         shell: alpine.sh --root {0}
+
+#       - name: Compiling GSRN
+#         run: |
+#           ./bootstrap
+#           ./configure --prefix=/opt --enable-static
+#           make
+#           mv src/gsrnd gsrnd-linux-x86_64
+#           mv src/gsrn_cli gsrn_cli-linux-x86_64
+#         shell: alpine.sh --root {0}
+
+#       - name: Upload to release
+#         uses: svenstaro/upload-release-action@v2
+#         with:
+#           repo_token: ${{ secrets.GITHUB_TOKEN }}
+#           file_glob: true
+#           file: gsrn*-linux-x86_64
+#           overwrite: true
+#           tag: ${{ env.TAG }}
+#### FAILS because alpine does not have libevent_openssl
