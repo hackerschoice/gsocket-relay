@@ -6,6 +6,7 @@ permissions:
 
 env:
   TAG: v1.0.15a
+  # TAG: ${{ github.ref == 'ref/heads/main' && 'latest' || github.ref }}
 
 # jobs:
 #   Linux-Cross:
@@ -99,3 +100,4 @@ jobs:
           file_glob: true
           file: gsrn*-linux-x86_64
           overwrite: true
+          tag: ${{ env.TAG }}
