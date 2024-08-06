@@ -1,0 +1,46 @@
+name: Static Build
+on: [workflow_dispatch]
+
+permissions:
+  contents: write
+
+env:
+  VER: 1.0.15a
+
+jobs:
+  Linux-Cross:
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-latest
+    container:
+      image: muslcc/x86_64:${{ matrix.arch }}-linux-musl
+    steps:
+      - uses: actions/checkout@v3
+      - name: Add build dependencies
+        run: |
+          apk add --update --no-cache --no-progress git autoconf automake
+
+      - name: Adding gsocket
+        run: |
+          git clone --depth 1 --single-branch https://github.com/hackerschoice/gsocket.git
+          cd gsocket
+          ./bootstrap
+          ./configure
+          make
+
+      - name: Compiling-${{ matrix.arch }}
+        run: |
+          ./bootstrap
+          ./configure --enable-static
+          mv src/gsrnd gsrnd-linux-${{ matrix.arch }}
+          mv src/gsrn_cli gsrn_cli-linux-${{ matrix.arch }}
+
+      - name: Upload to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: gsrnd-linux-${{ matrix.arch }}
+          file: gsrn_cli-linux-${{ matrix.arch }}
+          overwrite: true
+          tag: v${{ env.VER }}
