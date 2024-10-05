@@ -50,7 +50,7 @@ jobs:
           ( cd /tmp/libevent-${LIBEVENT_VER:-2.1.12-stable} && \
           PKG_CONFIG_PATH=/opt/lib/pkgconfig CFLAGS="-I/opt/include" LDFLAGS="-L/opt/lib" ./configure --prefix=/opt --enable-static --host=${{ matrix.arch }} && \
           make install )
-          rm -rf rm -rf /tmp/openssl-${OPENSSL_VER:-1.1.1w} /opt/bin/openssl /opt/bin/c_rehash
+          rm -rf /tmp/openssl-${OPENSSL_VER:-1.1.1w} /opt/bin/openssl /opt/bin/c_rehash
 
       - name: SaveCache
         if: steps.cachessl.outputs.cache-hit != 'true'
