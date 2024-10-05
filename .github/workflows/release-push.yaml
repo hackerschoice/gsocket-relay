@@ -30,7 +30,7 @@ jobs:
 
       - name: Add build dependencies
         run: |
-          apk add --update --no-cache --no-progress git autoconf automake make curl bsd-compat-headers file
+          apk add --update --no-cache --no-progress tar git autoconf automake make curl bsd-compat-headers file
 
       - name: Cache SSL + LibEvent
         id: cachessl
