@@ -1,3 +1,6 @@
+1.0.15
+    * NULL reference inn gsrn_listen
+
 1.0.12
     * Cake scheduler
     * TCP KeepAlive & SEND-Q/RECV-Q exhaustion

@@ -7,6 +7,11 @@ date_bin="date"
 command -v gdate >/dev/null && date_bin="gdate"
 unset GSOCKET_IP
 
+[[ "$($date_bin +%s%N)" == *N ]] && {
+	echo >&2 "No GNU-date found. $date_bin +%s%N is bad. Try brew install coreutils"
+	exit 255
+}
+
 gsrn_ping()
 {
 	SECRET=$(gs-netcat -g)

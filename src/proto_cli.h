@@ -134,6 +134,7 @@ struct _cli_list_r
 
 	uint64_t xfer_bytes;
 	uint128_t addr;
+	uint8_t gs_id[GS_ID_SIZE];
 	uint32_t peer_id;
 	uint32_t buddy_ip;
 	uint16_t buddy_port;

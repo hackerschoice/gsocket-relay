@@ -52,6 +52,7 @@ struct _peer
 	int fd;
 	uint32_t id;
 	uint128_t addr;
+	uint8_t gs_id[GS_ID_SIZE];
 	struct bufferevent *bev;
 	PKT pkt;
 	int flags;

@@ -141,8 +141,10 @@ gsrn_bad_auth_delay(struct _peer *p)
 	return 0;
 }
 
+// NOTE: msg might be NULL if called from cb_connect() and the client request to
+// go into "listen()" if no server is connected.
 static int
-gsrn_listen(struct _peer *p, uint8_t *token, struct _gs_listen *msg)
+gsrn_listen(struct _peer *p, uint8_t *token, struct _gs_listen *msg /* MIGHT BE NULL */)
 {
 	// Adjust timeout
 	bufferevent_set_timeouts(p->bev, TVSEC(GSRN_MSG_TIMEOUT), NULL);
@@ -169,14 +171,17 @@ gsrn_listen(struct _peer *p, uint8_t *token, struct _gs_listen *msg)
 		return -1;
 	}
 
-	logstream_listen(p, msg);
+	if (msg != NULL) {
+		memcpy(p->gs_id, msg->id, sizeof p->gs_id);
+		logstream_listen(p, msg);
+	}
 
 	struct _peer *buddy = PEER_get(p->addr, PEER_L_WAITING, NULL);
 	if (buddy != NULL) {
 		// There was a client waiting (-w). Connect immediately.
 		buddy_up(p /*server*/   , buddy /*client*/);
 	} else {
-		if (msg->flags & GS_FL_PROTO_BUDDY_CHECK) {
+		if ((msg != NULL) && (msg->flags & GS_FL_PROTO_BUDDY_CHECK)) {
 			GSRN_send_status_warn(p, GS_STATUS_CODE_BUDDY_NOK, NULL);
 			// Client wants GSRN to close the connection.
 			if (msg->flags & GS_FL_PROTO_CONN_CLOSE)
@@ -224,7 +229,8 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
 		goto err;
 	}
-	GS_LOG_V("[%6u] %32s LISTEN  %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+	char hex[GS_ID_SIZE * 2 + 1];
+	GS_LOG_V("[%6u] %32s LISTEN %s %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), GS_bin2hex(hex, sizeof hex, msg.id, sizeof msg.id), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 	if (gsrn_listen(p, msg.token, &msg) != 0)
 		goto err;

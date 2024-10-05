@@ -484,7 +484,8 @@ ls_listen_print(struct _cli_logstream *ls) {
 
 	if (gopt.verbosity > 0)
 		str = GS_bin2hex(hex, sizeof hex, msg, ls_trim_msg(msg, sizeof *msg));
-	printf("LISTEN %32s %s:%u [%s]\n", GS_addr128hex(NULL, ls->addr), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
+	char hex2[GS_ID_SIZE * 2 + 1];
+	printf("LISTEN %32s 0x%16s %s:%u [%s]\n", GS_addr128hex(NULL, ls->addr), GS_bin2hex(hex2, sizeof hex2, msg->id, sizeof msg->id), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
 }
 
 static void
@@ -536,7 +537,7 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	evbuffer_remove(eb, &msg, sizeof msg);
 
 	if (msg.flags & GSRN_FL_CLI_LIST_START)
-		printf("[       ID] Address                          HSXFLWAI State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
+		printf("[       ID] Address                          GS-ID              HSXFLWAI State     Age Server Address        - Client Address        (  idle) Traffic [      bps]\n");
 	//          [        4] 435701b27bf6e7467bef67fb3a4f2c17 a-----11 LISTEN     2s 10.0.2.2:521          - 10.0.2.2:526          (    2s)   2.6KB [  1.3KB/s]
 	//          [        4] 435701b27bf6e7467bef67fb3a4f2c17 zSXFLW12 ESTABL 99h05m 123.456.789.123:65123 - 111.222.333.444:64567 (99h03m)   2.6KB [  1.3KB/s]
 
@@ -564,7 +565,8 @@ cb_cli_list_r(struct evbuffer *eb, size_t len, void *arg)
 	memcpy(&ip, &msg.ip, sizeof ip);
 	snprintf(ipport, sizeof ipport, "%s:%u", int_ntoa(ip), ntohs(msg.port));
 
-	printf("[%9u] %32s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
+	char hex[GS_ID_SIZE * 2 + 1];
+	printf("[%9u] %32s 0x%16s %c%7.7s %s %*s %-21s", msg.peer_id, GS_addr2hex(NULL, &msg.addr), GS_bin2hex(hex, sizeof hex, msg.gs_id, sizeof msg.gs_id), 'a'+hostname_id, msg.flagstr, PEER_L_name(msg.pl_id), GS_SINCE_MAXSIZE - 1, since, ipport);
 
 	if (msg.buddy_port != 0)
 	{

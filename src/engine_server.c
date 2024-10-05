@@ -124,6 +124,7 @@ cb_peers_list(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	msg.peer_id = htonl(p->id);
 	msg.ip = p->addr_in.sin_addr.s_addr;
 	msg.port =  p->addr_in.sin_port;
+	memcpy(msg.gs_id, p->gs_id, sizeof msg.gs_id);
 
 	msg.in_n = htonll(p->in_n);
 	msg.out_n = htonll(p->out_n);
