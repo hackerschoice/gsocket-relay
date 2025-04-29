@@ -16,7 +16,7 @@ sed 's/#SystemMaxUse.*/SystemMaxUse=10M/' -i /etc/systemd/journald.conf
 systemctl restart systemd-journald
 
 sed 's/.*Port 22$/Port 64222/' -i /etc/ssh/sshd_config
-systemctl restart sshd
+systemctl restart ssh
 
 useradd gsnet
 cp -a /etc/skel /home/gsnet
