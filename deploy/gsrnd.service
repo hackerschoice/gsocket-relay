@@ -10,8 +10,8 @@ RestartSec=60
 #User=gsnet
 Environment="LD_LIBRARY_PATH=/sec/usr/lib"
 # Environment="GS_LIMIT=100Mbit"
-ExecStartPre=/bin/bash /sec/usr/bin/gsrnd_start.sh
-ExecStart=/sec/usr/bin/gsrnd -p22 -p25 -p53 -p67 -p443 -p7350
+ExecStartPre=/bin/bash /usr/bin/gsrnd_start.sh
+ExecStart=/usr/bin/gsrnd -p22 -p25 -p53 -p67 -p443 -p7350
 StandardOutput=journal
 
 [Install]

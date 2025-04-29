@@ -18,9 +18,12 @@ systemctl restart systemd-journald
 sed 's/.*Port 22$/Port 64222/' -i /etc/ssh/sshd_config
 systemctl restart sshd
 
-#useradd gsnet
+useradd gsnet
+cp -a /etc/skel /home/gsnet
+mkdir /home/gsnet/.ssh
+touch /home/gsnet/.ssh/authorized_keys
+chown -R gsnet:gsnet /home/gsnet
 #mkdir -p /home/gsnet/usr/bin /home/gsnet/src
-# chown gsnet:gsnet /home/gsnet
 
 [[ -L /etc/resolv.conf ]] && {
     systemctl stop systemd-resolved

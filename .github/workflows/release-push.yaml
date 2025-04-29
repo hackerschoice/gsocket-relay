@@ -7,7 +7,7 @@ permissions:
 env:
   OPENSSL_VER: 1.1.1w
   LIBEVENT_VER: 2.1.12-stable
-  TAG: v1.0.15a
+  TAG: v1.0.15
   # TAG: ${{ github.ref == 'ref/heads/main' && 'latest' || github.ref }}
 
 jobs:
