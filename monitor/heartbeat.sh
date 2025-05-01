@@ -21,6 +21,7 @@ command -v gdate >/dev/null && date(){ gdate "$@"; }
 	MYNAME=${MYNAME%%.*}
 }
 
+[ -z "$DOMAIN" ] && DOMAIN=thc.org
 
 waitkp()
 {
@@ -63,8 +64,8 @@ heartbeat()
 	rm -f /tmp/gsrn_heartbeat_server_err.txt /tmp/gsrn_heartbeat_server_out.txt /tmp/gsrn_heartbeat_client_err.txt /tmp/gsrn_heartbeat_client_out.txt
 
 	# Start 2 background processes
-	GSPID1="$(sh -c 'GSOCKET_HOST="'$1'" gs-netcat -s "'$SECRET'" -l </tmp/gsrn_heartbeat_in.txt 2>/tmp/gsrn_heartbeat_server_err.txt >/tmp/gsrn_heartbeat_server_out.txt & echo ${!}')"
-	GSPID2="$(sh -c 'GSOCKET_HOST="'$1'" gs-netcat -s "'$SECRET'" -w </tmp/gsrn_heartbeat_in.txt 2>/tmp/gsrn_heartbeat_client_err.txt >/tmp/gsrn_heartbeat_client_out.txt & echo ${!}')"
+	GSPID1="$(sh -c 'GSOCKET_HOST="'$1.${DOMAIN}'" gs-netcat -s "'$SECRET'" -l </tmp/gsrn_heartbeat_in.txt 2>/tmp/gsrn_heartbeat_server_err.txt >/tmp/gsrn_heartbeat_server_out.txt & echo ${!}')"
+	GSPID2="$(sh -c 'GSOCKET_HOST="'$1.${DOMAIN}'" gs-netcat -s "'$SECRET'" -w </tmp/gsrn_heartbeat_in.txt 2>/tmp/gsrn_heartbeat_client_err.txt >/tmp/gsrn_heartbeat_client_out.txt & echo ${!}')"
 
 	# Wait max sleep_wd seconds for them to complete.
 	waitkp "$GSPID1"

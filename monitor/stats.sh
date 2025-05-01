@@ -7,7 +7,7 @@ date_bin="date"
 command -v gdate >/dev/null && date_bin="gdate"
 unset GSOCKET_IP
 
-[ -z "$VERBOSE" ] && echo >&2 "Use VERBOSE=1 for verbose output"
+[ -z "$VERBOSE" ] && echo >&2 "Use VERBOSE=[12] for verbose output"
 cmd=""
 [ "${VERBOSE:-0}" -eq 1 ] && cmd='(echo -e "stats\nlist server"; sleep 1) | gsrn_cli;'
 [ "${VERBOSE:-0}" -gt 1 ] && cmd="(echo -e 'stats\nlist cli'; sleep 1) | gsrn_cli;"

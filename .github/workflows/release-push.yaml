@@ -67,7 +67,7 @@ jobs:
           ./configure --prefix=/opt --enable-realprefix=/usr --enable-static --host=${{ matrix.arch }}
           make all
 
-      - name: Compiling GSRN
+      - name: Compiling GSRND
         run: |
           ./bootstrap
           LDFLAGS="-L/opt/lib" LIBS="-lssl -lcrypto" ./configure --prefix=/opt --enable-static --host=${{ matrix.arch }}
