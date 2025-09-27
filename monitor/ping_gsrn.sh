@@ -14,26 +14,29 @@ unset GSOCKET_IP
 
 gsrn_ping()
 {
+	local n=0
 	SECRET=$(gs-netcat -g)
 
-	export GSOCKET_HOST=$1
+	export GSOCKET_HOST="$1"
 	export SECRET
 	VARBACK=$(mktemp)
 
-	GSPID="$(sh -c 'gs-netcat -s "$SECRET" -l -e cat &>/dev/null & echo ${!}')"
+	GSPID="$(gs-netcat -s "$SECRET" -l -e cat 2>/dev/null >/dev/null </dev/null & echo "${!}")"
 	M=31337000000
 
-	(sleep 1; for x in $(seq 1 3); do $date_bin +%s%N; sleep 0.5; done) | gs-netcat -s "$SECRET" -w -q| while read -r x; do
+	echo -n "${1%%.*} "
+
+	(sleep 1; for x in {1..3}; do $date_bin +%s%N; sleep 0.5; done) | gs-netcat -s "$SECRET" -w -q| while read -r x 2>/dev/null; do
 		! [[ $x =~ ^17 ]] && continue
-
 		D=$(($($date_bin +%s%N) - x))
-		M=$(MIN $M $D)
-
+		printf "%.3fms " "$(echo "$D"/1000000 | bc -l)"
+		[ "$D" -gt "$M" ] && continue
+		M="$D"
 		echo "$M" >"$VARBACK"
 	done
-	D=$(cat "$VARBACK")
+	D=$(<"$VARBACK")
 	rm -f "${VARBACK:?}"
-	printf "MIN %s %.3fms\n" "$1" "$(echo "$D"/1000000 | bc -l)"
+	printf "\t\tMIN %.3fms\n" "$(echo "$D"/1000000 | bc -l)"
 
 	kill "$GSPID"
 }

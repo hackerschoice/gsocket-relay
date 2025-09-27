@@ -15,7 +15,7 @@ cmd+='echo -e "netstat EST: \e[0;33m$(netstat -ant | grep EST | wc -l)\e[0m";'
 
 for h in "${HOSTS[@]}"; do
 	echo "=====${h}====="
-	ssh "${SSH_ARGS[@]}" "${h}" "$cmd"
+	ssh "${SSH_ARGS[@]}" "${h%%.*}" "$cmd"
 done
 
 

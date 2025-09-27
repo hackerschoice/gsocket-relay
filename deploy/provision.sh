@@ -4,7 +4,7 @@
 
 ln -sf /dev/null ~/.bash_history
 apt update
-apt install -y tmux jq build-essential curl iptables ripgrep fd-find bc htop conntrack libevent-dev libssl-dev net-tools
+apt install -y tmux jq build-essential curl iptables ripgrep fd-find bc htop conntrack libevent-dev libssl-dev net-tools gsocket
 ln -s /usr/bin/fdfind /usr/bin/fd
 echo nf_conntrack >>/etc/modules
 echo "net.ipv4.tcp_syncookies=0" >>/etc/sysctl.conf
@@ -23,7 +23,6 @@ cp -a /etc/skel /home/gsnet
 mkdir /home/gsnet/.ssh
 touch /home/gsnet/.ssh/authorized_keys
 chown -R gsnet:gsnet /home/gsnet
-#mkdir -p /home/gsnet/usr/bin /home/gsnet/src
 
 [[ -L /etc/resolv.conf ]] && {
     systemctl stop systemd-resolved
@@ -32,27 +31,3 @@ chown -R gsnet:gsnet /home/gsnet
     echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" >/etc/resolv.conf
 }
 
-# For gsrn-hb also add all servers to /etc/hosts
-
-exit 0
-VER=1.4.42beta2
-RVER=1.0.14
-
-cd /sec/src
-tar xfvz gsocket-${VER}.tar.gz
-cd gsocket-${VER}
-./configure --prefix=/sec/usr \
-&& make 
-
-cd /sec/src
-ln -s gsocket-${VER} gsocket
-tar xfvz gsocket-relay-${RVER:?}.tar.gz
-cd gsocket-relay-${RVER:?}
-ln -s ../gsocket gsocket
-./configure --prefix=/sec/usr \
-&& make install
-
-cp deploy/gsrnd.service /etc/systemd/system
-systemctl enable gsrnd
-systemctl start gsrnd && systemctl status gsrnd
-journalctl -u gsrnd -f --no-hostname

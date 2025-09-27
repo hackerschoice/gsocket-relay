@@ -485,7 +485,7 @@ ls_listen_print(struct _cli_logstream *ls) {
 	if (gopt.verbosity > 0)
 		str = GS_bin2hex(hex, sizeof hex, msg, ls_trim_msg(msg, sizeof *msg));
 	char hex2[GS_ID_SIZE * 2 + 1];
-	printf("LISTEN %32s 0x%16s %s:%u [%s]\n", GS_addr128hex(NULL, ls->addr), GS_bin2hex(hex2, sizeof hex2, msg->id, sizeof msg->id), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
+	printf("%ld LISTEN %32s 0x%16s %s:%u [%s]\n", time(NULL), GS_addr128hex(NULL, ls->addr), GS_bin2hex(hex2, sizeof hex2, msg->id, sizeof msg->id), inet_ntoa(ls->ipa.sin_addr), ntohs(ls->ipa.sin_port), str?:"");
 }
 
 static void
