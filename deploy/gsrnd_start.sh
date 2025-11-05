@@ -52,8 +52,11 @@ echo 1048576 >/proc/sys/net/ipv4/tcp_max_syn_backlog
 # Disabled by default. We dont use conntracking on gsocket-relay servers.
 modprobe nf_conntrack
 echo 1048576 >/proc/sys/net/netfilter/nf_conntrack_max
-ipt -A INPUT -p tcp --dport 64222 --syn -m connlimit --connlimit-above 8 -j REJECT --reject-with tcp-reset
-# Some bad deployments (early verion) start hundrets of gsnc -l. The gsrnd puts those into
+P="$(grep -m1 ^Port /etc/ssh/sshd_config | sed -e 's|Port \(.\)|\1|g')"
+P="${P:-64222}"
+ipt -A INPUT -p tcp --syn -m multiport ! --dports "22,25,53,80,443,7350,${P}" -j DROP
+ipt -A INPUT -p tcp --dport "${P}" --syn -m connlimit --connlimit-above 8 -j REJECT --reject-with tcp-reset
+# Some bad deployments (early version) start hundrets of gsnc -l. The gsrnd puts those into
 # BAD-AUTH queue to stop them from flooding the server with SYN. On IPT -j DROP
 # the client will wait 130 seconds before giving up.
 # ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 2048 -j DROP
