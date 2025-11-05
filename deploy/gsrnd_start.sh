@@ -54,7 +54,7 @@ modprobe nf_conntrack
 echo 1048576 >/proc/sys/net/netfilter/nf_conntrack_max
 P="$(grep -m1 ^Port /etc/ssh/sshd_config | sed -e 's|Port \(.\)|\1|g')"
 P="${P:-64222}"
-ipt -A INPUT -p tcp --syn -m multiport ! --dports "22,25,53,80,443,7350,${P}" -j DROP
+ipt -A INPUT -p tcp --syn -m multiport ! --dports "22,25,53,67,80,443,7350,${P}" -j DROP
 ipt -A INPUT -p tcp --dport "${P}" --syn -m connlimit --connlimit-above 8 -j REJECT --reject-with tcp-reset
 # Some bad deployments (early version) start hundrets of gsnc -l. The gsrnd puts those into
 # BAD-AUTH queue to stop them from flooding the server with SYN. On IPT -j DROP
@@ -113,6 +113,5 @@ grep . /proc/sys/net/ipv4/tcp*mem
 
 # NOTE: It's started from systemd via:
 # ExecStartPre=/bin/bash /home/gsnet/usr/bin/gsrnd_start.sh
-# ExecStart=/home/gsnet/usr/bin/gsrnd -p22 -p53 -p67 -p443 -p7350
-# exec "$(dirname "$0")/gsrnd" -p22 -p53 -p67 -p443 -p7350
+# ExecStart=/home/gsnet/usr/bin/gsrnd -p...
 
