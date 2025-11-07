@@ -9,6 +9,9 @@ Chances are that you are wrong here. Click here if you want to learn about gsock
 DIR="/opt/gsrn"
 [ ! -d "${DIR:?}" ] && mkdir -p "${DIR}"
 set -o pipefail
+[ -f /etc/systemd/resolved.conf ] && { grep -qm1 =udp /etc/systemd/resolved.conf || {
+  echo "DNSStubListener=udp" >>/etc/systemd/resolved.conf
+  systemctl stop systemd-resolved; }; }
 curl -SsfL "https://github.com/hackerschoice/gsocket-relay/releases/latest/download/gsrnd-linux-$(uname -m)" -o "${DIR:?}/gsrnd" \
 && curl -SsfL "https://github.com/hackerschoice/gsocket-relay/releases/latest/download/gsrn_cli-linux-$(uname -m)" -o "${DIR:?}/gsrn_cli" \
 && curl -SsfL "https://github.com/hackerschoice/gsocket-relay/raw/refs/heads/main/deploy/gsrnd_start.sh" -o "${DIR:?}/gsrnd_start.sh" \
