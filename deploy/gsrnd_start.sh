@@ -41,11 +41,6 @@ unset TC_ARGS
 # tc qdisc add dev "$DEV_GW"root handle 11: sfq
 # tc filter add dev "$DEV_GW" parent 11: handle 11 flow hash keys dst divisor 2048
 
-MEM_KB=$(grep MemTotal /proc/meminfo  | awk '{print $2;}')
-MEM_P80=$((MEM_KB * 80 / 100 / 4 ))
-MEM_P75=$((MEM_KB * 75 / 100 / 4 ))
-MEM_P70=$((MEM_KB * 70 / 100 / 4 ))
-
 echo $((16 * 1024)) >/proc/sys/net/core/somaxconn
 echo $((128 * 1024)) >/proc/sys/net/ipv4/tcp_max_syn_backlog
 
@@ -95,9 +90,9 @@ echo 1024 >/proc/sys/net/ipv4/tcp_max_orphans
 echo 2 >/proc/sys/net/ipv4/tcp_orphan_retries
 # echo 65535 >/proc/sys/net/ipv4/tcp_max_orphans
 
-# Set this to 80% of physical memory
-# low, pressure, high (man 7 tcp)
-echo "${MEM_P70} ${MEM_P75} ${MEM_P80}" >/proc/sys/net/ipv4/tcp_mem
+# net.ipv4.tcp_mem is now managed continuously by gsrnd-tcpmem.service
+# (see gsrnd_tcpmem_watch.sh) - it yields TCP buffer memory to gsrnd on
+# demand instead of a static split computed once at start.
 
 # 4k per socket min.
 # min, default, max

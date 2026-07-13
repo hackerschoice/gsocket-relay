@@ -1,0 +1,17 @@
+[Unit]
+Description=Dynamic tcp_mem sizing (yields TCP buffers to gsrnd on demand)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/gsrn/gsrnd_tcpmem_watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/gsrnd-tcpmem.service
+# systemctl enable gsrnd-tcpmem
+# systemctl start gsrnd-tcpmem
+# journalctl -u gsrnd-tcpmem -f --no-hostname
