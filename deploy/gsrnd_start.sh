@@ -46,11 +46,14 @@ MEM_P80=$((MEM_KB * 80 / 100 / 4 ))
 MEM_P75=$((MEM_KB * 75 / 100 / 4 ))
 MEM_P70=$((MEM_KB * 70 / 100 / 4 ))
 
-echo 1048576 >/proc/sys/net/core/somaxconn
-echo 1048576 >/proc/sys/net/ipv4/tcp_max_syn_backlog
+echo $((16 * 1024)) >/proc/sys/net/core/somaxconn
+echo $((128 * 1024)) >/proc/sys/net/ipv4/tcp_max_syn_backlog
+
+sysctl -w net.ipv4.tcp_syncookies=1
 
 # Disabled by default. We dont use conntracking on gsocket-relay servers.
 modprobe nf_conntrack
+# 262,144 × 350 bytes ≈ 92MB
 echo 1048576 >/proc/sys/net/netfilter/nf_conntrack_max
 P="$(grep -m1 ^Port /etc/ssh/sshd_config | sed -e 's|Port \(.\)|\1|g')"
 P="${P:-64222}"
@@ -61,6 +64,9 @@ ipt -A INPUT -p tcp --dport "${P}" --syn -m connlimit --connlimit-above 8 -j REJ
 # the client will wait 130 seconds before giving up.
 # ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 2048 -j DROP
 ipt -A INPUT -p tcp --syn -m connlimit --connlimit-above 1024 -j DROP
+# Prevent SYN floods
+ipt -A INPUT -p tcp --syn -m hashlimit --hashlimit-name synflood --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-srcmask 32 -j DROP
+#ipt -A INPUT -p tcp --syn -m hashlimit --hashlimit-name synflood-global --hashlimit-above 2000/sec --hashlimit-burst 40000 --hashlimit-mode dstip -j DROP
 
 # See https://www.frozentux.net/ipsysctl-tutorial/chunkyhtml/tcpvariables.html
 echo 60 >/proc/sys/net/ipv4/tcp_keepalive_time
