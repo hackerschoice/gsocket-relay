@@ -647,6 +647,8 @@ init_engine(void)
 
 	g_is_tty = isatty(STDIN_FILENO);
 	g_cli = CLI_new(-1, NULL, 0 /*is_server*/);
+	if (g_cli == NULL)
+		ERREXIT("CLI_new() failed\n");
 	bufferevent_socket_connect(g_cli->bev, (struct sockaddr *)&addr, sizeof addr);
 
 	PKT_setcb(&g_cli->pkt, GSRN_CLI_TYPE_LOGSTREAM, sizeof (struct _cli_logstream), cb_cli_logstream, g_cli);

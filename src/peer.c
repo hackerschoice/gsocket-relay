@@ -681,6 +681,7 @@ PEER_free(struct _peer *p)
 	XEVT_FREE(p->evt_tioc);
 	XEVT_FREE(p->evt_bad_auth_delay);
 	XBEV_FREE(p->bev);
+	XSSL_FREE(p->ssl);
 
 	// Unlink myself from my buddy
 	if (p->buddy != NULL)
@@ -783,10 +784,7 @@ PEER_new(int fd, SSL *ssl)
 
 	p = calloc(1, sizeof *p);
 	if (p == NULL)
-	{
-		// FIXME: Log this failure
 		return NULL;
-	}
 
 	PKT_init(&p->pkt);
 
@@ -807,6 +805,11 @@ PEER_new(int fd, SSL *ssl)
 		p->bev = bufferevent_openssl_socket_new(gopt.evb, -1, p->ssl, BUFFEREVENT_SSL_ACCEPTING, ev_opt);
 	} else {
 		p->bev = bufferevent_socket_new(gopt.evb, fd, ev_opt);
+	}
+
+	if (p->bev == NULL) {
+		XFREE(p);
+		return NULL;
 	}
 
 	bufferevent_setcb(p->bev, cb_bev_read, cb_bev_write, cb_bev_status, p);

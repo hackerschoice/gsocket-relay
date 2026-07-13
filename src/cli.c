@@ -22,10 +22,23 @@ CLI_new(int fd, SSL *ssl, int is_server)
 	// 	c->bev = bufferevent_openssl_socket_new(gopt.evb, -1, c->ssl, BUFFEREVENT_SSL_ACCEPTING/CONNECTING, BEV_OPT_DEFER_CALLBACKS)
 	// else
 	c->bev = bufferevent_socket_new(gopt.evb, fd, BEV_OPT_DEFER_CALLBACKS | BEV_OPT_CLOSE_ON_FREE);
+	if (c->bev == NULL)
+	{
+		XFREE(c);
+		return NULL;
+	}
 	bufferevent_setcb(c->bev, cb_bev_read_cli, cb_bev_write_cli, cb_bev_status_cli, c);
 
 	c->eb = evbuffer_new();
-
+	if (c->eb == NULL)
+	{
+		// bev owns fd (BEV_OPT_CLOSE_ON_FREE). Detach it so the caller's
+		// own close-on-NULL-return path doesn't close it a second time.
+		bufferevent_setfd(c->bev, -1);
+		XBEV_FREE(c->bev);
+		XFREE(c);
+		return NULL;
+	}
 
 	return c;
 }

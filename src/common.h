@@ -275,6 +275,7 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 #define XBIO_FREE(ptr)  do{if(ptr) BIO_free(ptr); ptr = NULL;}while(0)
 #define XBEV_FREE(ptr)  do{if(ptr) bufferevent_free(ptr); ptr = NULL;}while(0)
 #define XEVT_FREE(ptr)  do{if(ptr) event_free(ptr); ptr = NULL;}while(0)
+#define XSSL_FREE(ptr)  do{if(ptr) SSL_free(ptr); ptr = NULL;}while(0)
 
 
 #ifdef DEBUG

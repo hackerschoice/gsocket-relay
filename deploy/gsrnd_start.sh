@@ -33,7 +33,7 @@ tg_msg "GSRND started."
 
 DEV_GW=$(ip route show | grep default | head -n1 | awk '{print $5;}')
 TC_ARGS=()
-[[ -n $GS_LIMIT ]] && TC_ARGS+=(bandwidth "$GS_LIMIT")
+[ -n "$GS_LIMIT" ] && TC_ARGS+=(bandwidth "$GS_LIMIT")
 
 tc qdisc del dev "$DEV_GW" root 2>/dev/null
 tc qdisc add dev "$DEV_GW" root cake "${TC_ARGS[@]}" "dsthost"
