@@ -52,6 +52,10 @@ modprobe nf_conntrack
 echo 1048576 >/proc/sys/net/netfilter/nf_conntrack_max
 P="$(grep -m1 ^Port /etc/ssh/sshd_config | sed -e 's|Port \(.\)|\1|g')"
 P="${P:-64222}"
+# CLI (gsrn_cli) only ever connects via loopback (127.0.0.1). Exempt lo before
+# the DDoS/SYN-filter rules below so the port allow-list doesn't need to know
+# about CLI_DEFAULT_PORT/CLI_DEFAULT_PORT_SSL.
+ipt -I INPUT -i lo -j ACCEPT
 ipt -A INPUT -p tcp --syn -m multiport ! --dports "22,25,53,67,80,443,7350,${P}" -j DROP
 ipt -A INPUT -p tcp --dport "${P}" --syn -m connlimit --connlimit-above 8 -j REJECT --reject-with tcp-reset
 # Some bad deployments (early version) start hundrets of gsnc -l. The gsrnd puts those into
