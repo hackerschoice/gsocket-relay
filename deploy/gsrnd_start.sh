@@ -94,25 +94,15 @@ echo 1024 >/proc/sys/net/ipv4/tcp_max_orphans
 echo 2 >/proc/sys/net/ipv4/tcp_orphan_retries
 # echo 65535 >/proc/sys/net/ipv4/tcp_max_orphans
 
-# net.ipv4.tcp_mem is now managed continuously by gsrnd-tcpmem.service
-# (see gsrnd_tcpmem_watch.sh) - it yields TCP buffer memory to gsrnd on
-# demand instead of a static split computed once at start.
-
-# 4k per socket min.
+# net.ipv4.tcp_mem AND tcp_rmem/tcp_wmem's per-socket ceiling (3rd field) are
+# now managed continuously by gsrnd-tcpmem.service (see gsrnd_tcpmem_watch.sh)
+# - it scales the ceiling between 32KB and 512KB based on how much TCP memory
+# is actually in use vs. the tcp_mem pressure threshold, instead of a static
+# value picked once here. These starting values just cover the few seconds
+# before its first iteration.
 # min, default, max
-#echo 4096  4096   131072 >/proc/sys/net/ipv4/tcp_rmem
-# Note: Normally the packets are read immediately and thus no rmem is needed.
-# Start with larger buffer. Will be redued when pressure increases.
 echo "4096  16384   32768" >/proc/sys/net/ipv4/tcp_rmem
-# wmem defines throughput. On a 200ms link between A and B the max speed thus is:
-# 1000 / (200 * 2) * wmem_default
-#
-# with 131072 buffer and 200ms the user can get 327KBps
-# 131072 / (0.2 * 2) / 1024 == 320
-# On a 4GB server with 80% for TCP and all buffers 
-# 4 * 1024 * 1024 * 1024 * 0.8 /  131072 == 26,214 connections
-#echo 4096  1048576  1048576 >/proc/sys/net/ipv4/tcp_wmem
-echo "4096    65536  1048576" >/proc/sys/net/ipv4/tcp_wmem
+echo "4096  65536   32768" >/proc/sys/net/ipv4/tcp_wmem
 
 grep . /proc/sys/net/ipv4/tcp*mem
 
