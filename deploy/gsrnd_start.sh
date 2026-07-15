@@ -88,6 +88,15 @@ echo 10 >/proc/sys/net/netfilter/nf_conntrack_tcp_timeout_fin_wait
 echo 5 >/proc/sys/net/netfilter/nf_conntrack_tcp_timeout_last_ack
 echo 1 >/proc/sys/net/netfilter/nf_conntrack_tcp_timeout_close
 
+# Connections dropped by the connlimit rules above (source already over its
+# cap) never get a reply and otherwise sit in SYN_SENT for the 120s kernel
+# default - shrink that backlog fast, we never work this traffic anyway.
+echo 5 >/proc/sys/net/netfilter/nf_conntrack_tcp_timeout_syn_sent
+# Kernel default is 432000 (5 days). gsrnd clients keep-alive every 30s at
+# the application layer, so anything idle past a few minutes is already
+# dead (crashed client, network partition) - don't hold its state for days.
+echo 360 >/proc/sys/net/netfilter/nf_conntrack_tcp_timeout_established
+
 # Decrease orphans - Orphaned TCP connections should be killed fast.
 # Each can eat up to 64kB
 echo 1024 >/proc/sys/net/ipv4/tcp_max_orphans

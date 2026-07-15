@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically reload iptables ruleset unchanged to reset nf_conncount leak
+After=network.target iptables.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/gsrn/gsrnd_connlimit_reload.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
