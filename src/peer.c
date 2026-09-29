@@ -488,6 +488,9 @@ peer_sys_shutdown(struct _peer *p)
 		goto err;
 	if (p->shutdown_complete_func == NULL)
 		goto err;
+	// A forced shutdown can finish while the drain poll is still pending.
+	XEVT_FREE(p->evt_tioc);
+	XEVT_FREE(p->evt_shutdown_timeout);
 	DEBUGF("sys.shutdown(%d, SHUT_WR)\n", p->fd);
 	shutdown(p->fd, SHUT_WR);
 	p->flags &= ~FL_PEER_IS_WANT_SEND_SHUT_WR;
@@ -524,11 +527,12 @@ tioc(struct _peer *p)
 	// => GSRND wont get this error because Q never empties and never calls read()
 	// on the socket.  
 	// The only solution is to poll on getsockopt() to see if an error occured.
-	socklen_t len = sizeof (value);
-	ret = getsockopt (p->fd, SOL_SOCKET, SO_ERROR, &value, &len);
-	if ((ret != 0) || (value == EPIPE))
+	int socket_error = 0;
+	socklen_t len = sizeof socket_error;
+	ret = getsockopt(p->fd, SOL_SOCKET, SO_ERROR, &socket_error, &len);
+	if ((ret != 0) || (socket_error != 0))
 	{
-		DEBUGF_R("[%6u] %c fd=%d getsockopt()=%d err=%d (%s)\n", p->id, IS_CS(p), p->fd, ret, value, strerror(value));
+		DEBUGF_R("[%6u] %c fd=%d getsockopt()=%d err=%d (%s)\n", p->id, IS_CS(p), p->fd, ret, ret == 0 ? socket_error : errno, strerror(ret == 0 ? socket_error : errno));
 		return -1;
 	}
 
@@ -627,15 +631,23 @@ PEER_goodbye(struct _peer *p)
 	// Remove myself from lists. No longer available to any GSRN services (e.g. gs-connect())
 	peer_t_del(p);
 
-	PEER_shutdown(p, cb_shutdown_complete);
-
 	PKT_set_void(&p->pkt);
+	// Shutdown can synchronously free the peer.
+	PEER_shutdown(p, cb_shutdown_complete);
 }
 
 // Free a peer
 void
 PEER_free(struct _peer *p)
 {
+	if (PEER_IS_DISPATCHING(p))
+	{
+		// The dispatcher still owns references to the packet and input buffer.
+		PKT_free(&p->pkt);
+		p->flags |= FL_PEER_IS_WANT_FREE;
+		return;
+	}
+
 	DEBUGF_G("[%6u] %c %s peer=%p, bev=%p\n", p->id, IS_CS(p), __func__, p, p->bev);
 
 	if (PEER_IS_CLIENT(p))
@@ -687,6 +699,8 @@ PEER_free(struct _peer *p)
 	if (p->buddy != NULL)
 	{
 		p->buddy->buddy = NULL; // unlink myself from my buddy.
+		// The survivor may still be draining output, but cannot relay input.
+		bufferevent_disable(p->buddy->bev, EV_READ);
 	}
 
 	XCLOSE(p->fd);
@@ -828,5 +842,3 @@ PEER_new(int fd, SSL *ssl)
 
 	return p;
 }
-
-

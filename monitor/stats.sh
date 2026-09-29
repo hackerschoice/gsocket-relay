@@ -13,9 +13,9 @@ cmd=""
 [ "${VERBOSE:-0}" -gt 1 ] && cmd="(echo -e 'stats\nlist cli'; sleep 1) | gsrn_cli;"
 cmd+='echo -e "netstat EST: \e[0;33m$(netstat -ant | grep EST | wc -l)\e[0m";'
 
-for h in "${HOSTS[@]}"; do
+for h in "${SSH_HOSTS[@]}"; do
 	echo "=====${h}====="
-	ssh "${SSH_ARGS[@]}" "${h%%.*}" "$cmd"
+	ssh "${SSH_ARGS[@]}" -- "$h" "$cmd"
 done
 
 

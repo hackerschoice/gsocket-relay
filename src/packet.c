@@ -175,6 +175,8 @@ dispatch(PKT *pkt, struct evbuffer *eb)
 
 	return 0;
 more_data:
+	// The header remains buffered. Reparse it next time to recompute the length.
+	pkt->type = 0;
 
 	return -1;
 }

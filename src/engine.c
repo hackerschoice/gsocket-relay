@@ -570,9 +570,10 @@ cb_bev_write(struct bufferevent *bev, void *arg)
 		return;
 	}
 
-	if ((buddy != NULL) && PEER_IS_ACCEPT_RECEIVED(p))
+	if (PEER_IS_ACCEPT_RECEIVED(p))
 	{
-		bufferevent_enable(buddy->bev, EV_READ);
+		if (buddy != NULL)
+			bufferevent_enable(buddy->bev, EV_READ);
 		return;
 	}
 
@@ -590,6 +591,15 @@ cb_bev_relay_read(struct bufferevent *bev, void *arg)
 	struct evbuffer *in = bufferevent_get_input(bev);
 	struct _peer *buddy = p->buddy;
 	size_t in_sz = evbuffer_get_length(in);
+
+	// A deferred read may run after the buddy was freed. Keep draining this
+	// peer's output, but there is no destination for any further input.
+	if (buddy == NULL)
+	{
+		bufferevent_disable(bev, EV_READ);
+		evbuffer_drain(in, in_sz);
+		return;
+	}
 
 	PEER_stats_update(p, in);
 
@@ -630,7 +640,14 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 
 	gopt.usec_now = GS_usec();
 	// Dispatch protocol message
+	p->flags |= FL_PEER_IS_DISPATCHING;
 	PKT_dispatch(&p->pkt, in);
+	p->flags &= ~FL_PEER_IS_DISPATCHING;
+	if (PEER_IS_WANT_FREE(p))
+	{
+		PEER_free(p);
+		return;
+	}
 	// May have enabled EV_READ (if a gs-accept was received).
 	// HERE: PKT_dispatch() may have added data to _this_ peer's out-buffer
 	// and may have enable EV_READ (for example when buddy got connected and all
@@ -718,4 +735,3 @@ cb_accept_cnc(int fd, short ev, void *arg)
 
 	// FIXME: add event for reading and writing.
 }
-

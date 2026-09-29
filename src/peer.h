@@ -100,8 +100,9 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 #define FL_PEER_IS_SHORTWAIT             (0x20)
 #define FL_PEER_IS_SAW_SSL_HELO          (0x40)  // Detected an TLS Helo
 #define FL_PEER_IS_WANT_SEND_SHUT_WR     (0x80)
-#define FL_PEER_IS_WANT_FREE            (0x100)  // PEER_free() as soon as all data is written.
+#define FL_PEER_IS_WANT_FREE            (0x100)  // Free after active packet dispatch returns.
 #define FL_PEER_IS_SHUT_WR_SENT         (0x200)
+#define FL_PEER_IS_DISPATCHING         (0x400)
 
 #define PEER_IS_SERVER(p)              ((p)->flags & FL_PEER_IS_SERVER)
 #define PEER_IS_CLIENT(p)              ((p)->flags & FL_PEER_IS_CLIENT)
@@ -112,6 +113,7 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 #define PEER_IS_WANT_SEND_SHUT_WR(p)   ((p)->flags & FL_PEER_IS_WANT_SEND_SHUT_WR)
 #define PEER_IS_WANT_FREE(p)           ((p)->flags & FL_PEER_IS_WANT_FREE)
 #define PEER_IS_SHUT_WR_SENT(p)        ((p)->flags & FL_PEER_IS_SHUT_WR_SENT)
+#define PEER_IS_DISPATCHING(p)         ((p)->flags & FL_PEER_IS_DISPATCHING)
 
 // Return S, C or - for Server, Client or Unknown (used by DEBUGF)
 #define IS_CS(p)   (p)->flags & FL_PEER_IS_SERVER?'S':(p)->flags & FL_PEER_IS_CLIENT?'C':'#'
