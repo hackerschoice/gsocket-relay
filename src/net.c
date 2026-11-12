@@ -67,6 +67,14 @@ fd_net_accept(int listen_fd)
 		return -2;
 	}
 
+	if (evutil_make_socket_nonblocking(sox) != 0)
+	{
+		int saved_errno = errno;
+		close(sox);
+		errno = saved_errno;
+		return -2;
+	}
+
 	setsockopt(sox, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof (val));
 	// val = 60;
 	// setsockopt(sox, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof (val));
@@ -74,9 +82,6 @@ fd_net_accept(int listen_fd)
 	// setsockopt(sox, IPPROTO_TCP, TCP_KEEPINTVL, &val, sizeof (val));
 	// val = 4;
 	// setsockopt(sox, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof (val));
-	// ret = fcntl(sox, F_SETFL, O_NONBLOCK | fcntl(sox, F_GETFL, 0));
-	// if (ret != 0)
-		// return -2;
 
 	return sox;
 }

@@ -13,6 +13,7 @@ struct _port
 	TAILQ_ENTRY(_port) ll;
 	uint16_t port;
 	struct event *ev;
+	struct event *ev_resume;
 };
 
 TAILQ_HEAD(_port_listhead, _port);
@@ -25,6 +26,7 @@ const char *BEV_strerror(short what);
 void PORTSQ_add(struct _port_listhead *head, int port);
 void PORTSQ_listen(struct _port_listhead *head, uint32_t ip, uint16_t port_default, event_callback_fn cb_func);
 void PORTSQ_close(struct _port_listhead *head);
+void PORT_pause(struct _port *pt);
 void PORTSQ_free(struct _port_listhead *head);
 void close_del_ev(struct event **evptr);
 const char *PEER_L_name(uint8_t pl_id);

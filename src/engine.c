@@ -134,9 +134,15 @@ gsrn_bad_auth_delay(struct _peer *p)
 	// HERE: Rapid LISTEN requests with BAD-AUTH.
 	// Delay the error and disconnect.
 	p->evt_bad_auth_delay = evtimer_new(gopt.evb, cb_evt_bad_auth_delay, p);
+	if (p->evt_bad_auth_delay == NULL)
+		return -1;
 	uint64_t msec = (GSRN_BAD_AUTH_DELAY + random() % GSRN_BAD_AUTH_JITTER) * 1000 + random() % 1000;
 	DEBUGF("DELAY=%.03f sec\n", (float)msec/1000);
-	evtimer_add(p->evt_bad_auth_delay, TVMSEC(msec));
+	if (evtimer_add(p->evt_bad_auth_delay, TVMSEC(msec)) != 0)
+	{
+		XEVT_FREE(p->evt_bad_auth_delay);
+		return -1;
+	}
 
 	return 0;
 }
@@ -156,6 +162,8 @@ gsrn_listen(struct _peer *p, uint8_t *token, struct _gs_listen *msg /* MIGHT BE 
 	// unless the caller specified GS_LISTEN(n>1).
 	int ret;
 	ret = PEER_add(p, PEER_L_LISTENING, token);
+	if (ret == PEER_ADD_NOMEM)
+		return -1;
 	if (ret != 0)
 	{
 		// BAD AUTH TOKEN (another peer of same addr is already listening)
@@ -659,32 +667,40 @@ cb_bev_read(struct bufferevent *bev, void *arg)
 
 // Assign fd to bio and create peer and events for this peer.
 static int
-accept_ssl(int ls, SSL *ssl)
+accept_ssl(int ls, SSL *ssl, struct _port *pt)
 {
 	int sox;
 
 	sox = fd_net_accept(ls);
 	if (sox < 0)
 	{
-		GSR_LOG_V("[%6u] ERROR: accept(%d)=%s", ls, strerror(errno));
-		// Likely ran out of FD's. We should not exit
-		// but instead increase FD limit, accept fd, disconnect FD
-		// and the set FD limit again.
-		fd_limit_unlimited();
-		sox = fd_net_accept(ls);
-		fd_limit_limited();
+		// A transient accept error must not consume the next queued client.
+		if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR) ||
+		    (errno == ECONNABORTED) || (errno == ENETDOWN) || (errno == EPROTO) ||
+		    (errno == ENOPROTOOPT) || (errno == EHOSTDOWN) || (errno == ENONET) ||
+		    (errno == EHOSTUNREACH) || (errno == EOPNOTSUPP) || (errno == ENETUNREACH))
+			return -1;
 
-		// Catch-all total fuckup: wait...
-		if (sox < 0)
-			usleep(100 * 1000);
-		goto err; // Will close() the accepted socket.
+		int accept_errno = errno;
+		GSR_LOG_V("[000000] ERROR: accept(%d)=%s", ls, strerror(errno));
+		// Use a reserved descriptor only when the process limit was reached.
+		if ((accept_errno == EMFILE) && (fd_limit_unlimited() == 0))
+		{
+			sox = fd_net_accept(ls);
+			fd_limit_limited();
+		}
+		PORT_pause(pt);
+		goto err; // Close any connection accepted using the reserved descriptor.
 	}
 
 	// Create peer
 	struct _peer *p;
 	p = PEER_new(sox, ssl);
 	if (p == NULL)
+	{
+		PORT_pause(pt);
 		goto err;
+	}
 
 	return 0;
 err:
@@ -699,7 +715,7 @@ cb_accept(int ls, short ev, void *arg)
 	// struct event *ev = (struct event *)arg;
 	// BIO *bio = BIO_new(BIO_s_socket());
 
-	if (accept_ssl(ls, NULL) != 0)
+	if (accept_ssl(ls, NULL, arg) != 0)
 		goto err;
 
 	return;
@@ -717,7 +733,7 @@ cb_accept_ssl(int ls, short ev, void *arg)
 	// BIO *bio = BIO_new_ssl(gopt.ssl_ctx, 0 /*server*/);
 
 	SSL *ssl = SSL_new(gopt.ssl_ctx);
-	if (accept_ssl(ls, ssl) != 0)
+	if (accept_ssl(ls, ssl, arg) != 0)
 		goto err;
 
 	return;
@@ -730,7 +746,7 @@ err:
 void
 cb_accept_cnc(int fd, short ev, void *arg)
 {
-	accept_ssl(fd, NULL);
+	accept_ssl(fd, NULL, arg);
 // FIXME: pass which msg dispatcher function should be called for message types.
 
 	// FIXME: add event for reading and writing.

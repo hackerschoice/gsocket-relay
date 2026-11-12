@@ -11,6 +11,7 @@
 static void cb_evt_linger(int fd_notused, short event, void *arg);
 static void cb_evt_shortwait(int fd_notused, short event, void *arg);
 static void peer_stats_update_bps(struct _peer *p);
+static void pl_mgr_t_free(struct _peer_l_mgr *pl_mgr);
 
 #ifdef DEBUG
 static void
@@ -147,11 +148,15 @@ pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t 
 			// HERE: Token is not set for this manager
 			if ((token != NULL) && (memcmp(token, token_zero, sizeof token_zero) != 0))
 			{
+				if (pl_mgr->evt_linger == NULL)
+				{
+					pl_mgr->evt_linger = evtimer_new(gopt.evb, cb_evt_linger, pl_mgr);
+					if (pl_mgr->evt_linger == NULL)
+						return PEER_ADD_NOMEM;
+				}
 				// Peer's token is set (not 0x000...00). Save it.
 				pl_mgr->flags |= FL_PL_IS_TOKEN_SET;
 				memcpy(pl_mgr->token, token, sizeof pl_mgr->token);
-				if (pl_mgr->evt_linger == NULL)
-					pl_mgr->evt_linger = evtimer_new(gopt.evb, cb_evt_linger, pl_mgr);
 			}
 		}
 		if (pl_mgr->evt_shortwait != NULL)
@@ -251,6 +256,7 @@ int
 PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 {
 	struct _peer_l_mgr *pl_mgr = NULL;
+	int is_new = 0;
 
 	XASSERT(p->plr == NULL, "Oops. Peer already in a linked list\n");
 	pl_mgr = PEER_get_mgr(p->addr);
@@ -261,8 +267,15 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 		DEBUGF("{fd=%d} Creating a new linked list. (list-mgr=%p, list=%d) tree=%p\n", p->fd, pl_mgr, pl_id, gopt.t_peers.tree);
 
 		pl_mgr = calloc(1, sizeof (struct _peer_l_mgr));
+		if (pl_mgr == NULL)
+			return PEER_ADD_NOMEM;
 		pl_mgr->addr = p->addr;
 		pl_mgr->evt_shortwait = evtimer_new(gopt.evb, cb_evt_shortwait, pl_mgr);
+		if (pl_mgr->evt_shortwait == NULL)
+		{
+			free(pl_mgr);
+			return PEER_ADD_NOMEM;
+		}
 
 		int i;
 		for (i = 0; i < MAX_LISTS_BY_ADDR; i++)
@@ -271,8 +284,14 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 			pl_mgr->plr[i].pl_mgr = pl_mgr;
 		}
 
-		tsearch(pl_mgr, &gopt.t_peers.tree, cb_t_peer_by_addr);  // Add to binary tree
+		if (tsearch(pl_mgr, &gopt.t_peers.tree, cb_t_peer_by_addr) == NULL)
+		{
+			XEVT_FREE(pl_mgr->evt_shortwait);
+			free(pl_mgr);
+			return PEER_ADD_NOMEM;
+		}
 		gopt.t_peers.n_nodes += 1;
+		is_new = 1;
 	} else {
 		// HERE: Existing linked list (peer with same addr already exists)
 		struct _peer_l_root *plr = &pl_mgr->plr[pl_id];
@@ -281,7 +300,11 @@ PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token)
 	int ret;
 	ret = pl_link(pl_mgr, p, pl_id, token);
 	if (ret != 0)
-		return ret; // Bad Token;
+	{
+		if (is_new)
+			pl_mgr_t_free(pl_mgr);
+		return ret;
+	}
 
 	return 0;
 }
@@ -550,8 +573,8 @@ cb_evt_tioc(int fd, short what, void *arg)
 			p->tioc_delay_ms += 20;
 
 		// Wait again...
-		evtimer_add(p->evt_tioc, TVMSEC(p->tioc_delay_ms));
-		return;
+		if (evtimer_add(p->evt_tioc, TVMSEC(p->tioc_delay_ms)) == 0)
+			return;
 	}
 
 	// XEVT_FREE(p->evt_tioc); // Not needed. FIXME-2024
@@ -588,7 +611,9 @@ PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 			// Set a timeout if we fail to write all data.
 			if (p->evt_shutdown_timeout == NULL)
 				p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
-			evtimer_add(p->evt_shutdown_timeout, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT * 4) /*seconds*/);
+			if ((p->evt_shutdown_timeout == NULL) ||
+			    (evtimer_add(p->evt_shutdown_timeout, TVSEC(GSRN_SHUTDOWN_IDLE_TIMEOUT * 4)) != 0))
+				goto shutdown_now;
 			return;
 		}
 	}
@@ -605,18 +630,22 @@ PEER_shutdown(struct _peer *p, shutdown_complete_func_t func)
 	{
 		// create timer to check kernel buffer again...
 		p->evt_tioc = evtimer_new(gopt.evb, cb_evt_tioc, p);
-		evtimer_add(p->evt_tioc, TVMSEC(10) /*milli-seconds*/);
+		if ((p->evt_tioc == NULL) || (evtimer_add(p->evt_tioc, TVMSEC(10)) != 0))
+			goto shutdown_now;
 
 		// Kernel buffer may never free (for example when peer has stopped reading).
 		// Thus we force call to 'shutdown()' even if there is data left in
 		// the output kernel buffer.
 		if (p->evt_shutdown_timeout == NULL)
 			p->evt_shutdown_timeout = evtimer_new(gopt.evb, cb_evt_shutdown_timeout, p);
-		evtimer_add(p->evt_shutdown_timeout, TVSEC(3) /*seconds*/);
+		if ((p->evt_shutdown_timeout == NULL) ||
+		    (evtimer_add(p->evt_shutdown_timeout, TVSEC(3)) != 0))
+			goto shutdown_now;
 
 		return;
 	}
 
+shutdown_now:
 	peer_sys_shutdown(p);
 }
 

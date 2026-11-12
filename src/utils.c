@@ -105,6 +105,7 @@ PORTSQ_listen(struct _port_listhead *head, uint32_t ip, uint16_t port_default, e
 static void
 PORT_close(struct _port *pt)
 {
+	XEVT_FREE(pt->ev_resume);
 	if (pt->ev == NULL)
 		return;
 
@@ -118,6 +119,25 @@ PORT_close(struct _port *pt)
 	pt->ev = NULL;
 
 	close(fd);
+}
+
+static void
+cb_port_resume(int fd, short what, void *arg)
+{
+	struct _port *pt = arg;
+	if ((pt->ev != NULL) && (event_add(pt->ev, NULL) != 0))
+		evtimer_add(pt->ev_resume, TVMSEC(100));
+}
+
+void
+PORT_pause(struct _port *pt)
+{
+	if ((pt == NULL) || (pt->ev == NULL) || (pt->ev_resume == NULL))
+		return;
+
+	// Arm the retry before disabling accept so a timer failure cannot strand it.
+	if (evtimer_add(pt->ev_resume, TVMSEC(100)) == 0)
+		event_del(pt->ev);
 }
 
 // Close all ports (and free all events). Do not free Q as we later may want
@@ -160,11 +180,18 @@ PORT_add_listen(struct _port *pt, uint32_t ip, event_callback_fn cb_func, void *
 		goto err;
 
 	pt->ev = event_new(gopt.evb, ls, EV_READ|EV_PERSIST, cb_func, arg);
-	XASSERT(pt->ev != NULL, "event_new() failed\n");
+	if (pt->ev == NULL)
+		goto err;
+	pt->ev_resume = evtimer_new(gopt.evb, cb_port_resume, pt);
+	if (pt->ev_resume == NULL)
+		goto err;
 
-	event_add(pt->ev, NULL);
+	if (event_add(pt->ev, NULL) != 0)
+		goto err;
 	return 0;
 err:
+	XEVT_FREE(pt->ev_resume);
+	XEVT_FREE(pt->ev);
 	XCLOSE(ls);
 	return -1;
 }

@@ -120,6 +120,7 @@ typedef void (*peer_func_t)(struct _peer *p, void *arg);
 
 void PEER_conn_refused(struct _peer *p);
 void PEER_goodbye(struct _peer *p);
+#define PEER_ADD_NOMEM (-2)
 int PEER_add(struct _peer *p, peer_l_id_t pl_id, uint8_t *token);
 void PEER_free(struct _peer *p);
 void PEER_try_free(struct _peer *p);
