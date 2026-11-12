@@ -75,3 +75,5 @@ jobs:
           file: gsrn*-linux-${{ matrix.arch }}
           overwrite: true
           tag: ${{ env.TAG }}
+          release_name: ${{ env.TAG }}
+          body: '<!-- -->'
