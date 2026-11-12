@@ -271,6 +271,10 @@ extern struct _g_debug_ctx g_dbg_ctx; // declared in utils.c
 	fflush(gopt.out); \
 } while (0)
 
+// Like GS_LOG_V/VV but arguments are not evaluated unless the level is enabled.
+#define GSR_LOG_V(a...)  do { if (gopt.verbosity >= GS_LOG_LEVEL_VERBOSE) GS_LOG_V(a); } while (0)
+#define GSR_LOG_VV(a...) do { if (gopt.verbosity >= GS_LOG_LEVEL_MOREVERB) GS_LOG_VV(a); } while (0)
+
 #define XFREE(ptr)      do{if(ptr) free(ptr); ptr = NULL;}while(0)
 #define XBIO_FREE(ptr)  do{if(ptr) BIO_free(ptr); ptr = NULL;}while(0)
 #define XBEV_FREE(ptr)  do{if(ptr) bufferevent_free(ptr); ptr = NULL;}while(0)

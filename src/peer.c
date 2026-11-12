@@ -139,7 +139,7 @@ pl_link(struct _peer_l_mgr *pl_mgr, struct _peer *p, peer_l_id_t pl_id, uint8_t 
 			if ((token == NULL) || (memcmp(pl_mgr->token, token, sizeof pl_mgr->token) != 0))
 			{
 				char hextoken[GS_TOKEN_SIZE * 2 + 1];
-				GS_LOG_V("[%6u] %32s "CDR"BAD AUTH TOKEN"CN" (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
+				GSR_LOG_V("[%6u] %32s "CDR"BAD AUTH TOKEN"CN" (%s, was %s)", p->id, GS_addr128hex(NULL, p->addr), GS_token2hex(NULL, token), GS_token2hex(hextoken, pl_mgr->token));
 				return -1; // Bad Token
 			}
 			evtimer_del(pl_mgr->evt_linger);
@@ -426,7 +426,7 @@ void
 PEER_conn_refused(struct _peer *p)
 {
 	gstats.n_gs_refused += 1;
-	GS_LOG_V("[%6u] %32s CON-REFUSED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+	GSR_LOG_V("[%6u] %32s CON-REFUSED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 	GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNREFUSED, NULL);
 	PEER_goodbye(p);
 }
@@ -661,7 +661,7 @@ PEER_free(struct _peer *p)
 		char bps_max[GS_BPS_MAXSIZE + 2]; // + /s
 		GS_format_bps(bps_max, sizeof bps_max, p->bps_max, "/s");
 
-		GS_LOG_V("[%6u] %32s DISCON  %s %*s %s %s", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
+		GSR_LOG_V("[%6u] %32s DISCON  %s %*s %s %s", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), GS_SINCE_MAXSIZE -1, since, traffic, bps_max);
 	}
 
 #ifdef DEBUG

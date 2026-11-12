@@ -69,7 +69,7 @@ cb_peers_shutdown(struct _peer *p, struct _peer_l_root *plr, void *arg)
 	}
 
 	// HERE: peer is LISTENING
-	GS_LOG_VV("[%6u] %32s Shutdown", p->id, GS_addr128hex(NULL, p->addr));
+	GSR_LOG_VV("[%6u] %32s Shutdown", p->id, GS_addr128hex(NULL, p->addr));
 	param->n_shutdown += 1;
 	PEER_goodbye(p);	
 }

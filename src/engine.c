@@ -225,12 +225,12 @@ cb_gsrn_listen(struct evbuffer *eb, size_t len, void *arg)
 
 	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
 	{
-		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (listen) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+		GSR_LOG_V("[%6u] %32s OBSOLETE CLIENT (listen) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
 		goto err;
 	}
 	char hex[GS_ID_SIZE * 2 + 1];
-	GS_LOG_V("[%6u] %32s LISTEN %s %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), GS_bin2hex(hex, sizeof hex, msg.id, sizeof msg.id), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+	GSR_LOG_V("[%6u] %32s LISTEN %s %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), GS_bin2hex(hex, sizeof hex, msg.id, sizeof msg.id), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 	if (gsrn_listen(p, msg.token, &msg) != 0)
 		goto err;
@@ -266,7 +266,7 @@ buddy_up(struct _peer *server, struct _peer *client)
 	char s_ipport[32];
 	snprintf(s_ipport, sizeof s_ipport, "%s", gs_log_in_addr2str(&server->addr_in));
 	
-	GS_LOG_V("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, gs_log_in_addr2str(&client->addr_in), s_ipport);
+	GSR_LOG_V("[%6u] %32s CONNECT v%u.%u %s->%s", client->id, GS_addr128hex(NULL, client->addr), client->version_major, client->version_minor, gs_log_in_addr2str(&client->addr_in), s_ipport);
 
 	DEBUGF_G("%c Server-%d fd=%d bev=%p\n", IS_CS(server), server->id, bufferevent_getfd(server->bev), server->bev);
 	DEBUGF_G("%c Client-%d fd=%d bev=%p\n", IS_CS(client), client->id, bufferevent_getfd(client->bev), client->bev);
@@ -287,7 +287,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 
 	if ((msg.version_major < gd.min_version_major) || ((msg.version_major == gd.min_version_major) && (msg.version_minor < gd.min_version_minor)))
 	{
-		GS_LOG_V("[%6u] %32s OBSOLETE CLIENT (connect) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+		GSR_LOG_V("[%6u] %32s OBSOLETE CLIENT (connect) %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 		GSRN_send_status_fatal(p, GS_STATUS_CODE_NEEDUPDATE, GS_STR_OBSOLETE_CLIENT);
 		goto err;
 	}
@@ -332,7 +332,7 @@ cb_gsrn_connect(struct evbuffer *eb, size_t len, void *arg)
 		ret = PEER_add(p, PEER_L_WAITING, NULL);
 		if (ret != 0)
 		{
-			GS_LOG_V("[%6u] %32s CON-DENIED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
+			GSR_LOG_V("[%6u] %32s CON-DENIED %s v%u.%u", p->id, GS_addr128hex(NULL, p->addr), gs_log_in_addr2str(&p->addr_in), p->version_major, p->version_minor);
 
 			GSRN_send_status_fatal(p, GS_STATUS_CODE_CONNDENIED, "Not allowed to connect.");
 			goto err;
@@ -666,7 +666,7 @@ accept_ssl(int ls, SSL *ssl)
 	sox = fd_net_accept(ls);
 	if (sox < 0)
 	{
-		GS_LOG_V("[%6u] ERROR: accept(%d)=%s", ls, strerror(errno));
+		GSR_LOG_V("[%6u] ERROR: accept(%d)=%s", ls, strerror(errno));
 		// Likely ran out of FD's. We should not exit
 		// but instead increase FD limit, accept fd, disconnect FD
 		// and the set FD limit again.
